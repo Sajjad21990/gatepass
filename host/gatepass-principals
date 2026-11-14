@@ -16,9 +16,9 @@
 # for the one whose signature it then verifies, so the record always ends up
 # describing the certificate that actually logged in.
 #
-# A certificate without a gatepass-session force-command gets no record and is
-# therefore not time-limited by the reaper (the CA decides what it signs).
-# If a deadline is present but cannot be recorded, the login is refused.
+# A certificate without a gatepass-session force-command is refused: every
+# pass the contract issues carries one, so anything else is not a pass.
+# If a deadline is present but cannot be recorded, the login is refused too.
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -48,6 +48,8 @@ if [ -n "$deadline" ]; then
     mv -f "$record.new" "$record" || exit 1
 else
     rm -f "$record"
+    echo "gatepass-principals: certificate has no gatepass-session deadline; refusing" >&2
+    exit 1
 fi
 
 printf '%s\n' "$user"

@@ -223,16 +223,27 @@ async function hostSetup() {
 #    asks only after someone has paid for a pass on ${id}.
 ${ca}
 
-# 2. Add to /etc/ssh/sshd_config, then reload sshd:
+# 2. Use host/sshd_config from this repo as your sshd configuration (or merge
+#    its lines into yours), pointing TrustedUserCAKeys at the file from step 1.
+#    The lines that matter:
 TrustedUserCAKeys /etc/ssh/gatepass_ca.pub
+AuthorizedKeysFile none
 PasswordAuthentication no
 DisableForwarding yes
+AuthorizedPrincipalsCommand /usr/local/bin/gatepass-principals %u %t %k
+AuthorizedPrincipalsCommandUser root
 
-# 3. Install host/gatepass-session from this repo as
-#    /usr/local/bin/gatepass-session (root-owned, mode 0755). Every pass forces
-#    it as the login command; it ends the session when the paid time is up.
+# 3. Install these three scripts from host/ into /usr/local/bin, owned by root,
+#    mode 0755:
+#      gatepass-session     forced as the login command of every pass; ends
+#                           the session when the paid time is up
+#      gatepass-principals  run by sshd as root at login; records the deadline
+#      gatepass-reaper      run it as a root service (GATEPASS_USER=${machine.login_user});
+#                           it enforces the deadline even if the renter stops
+#                           the session wrapper
 #
-# 4. Create the login user "${machine.login_user}" (the one registered for ${id}).`);
+# 4. Create the login user "${machine.login_user}" (the one registered for ${id}), then
+#    reload sshd. host/Dockerfile and host/entrypoint.sh show a complete setup.`);
 }
 
 async function register() {
