@@ -5,8 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-process.env.NEAR_NO_LOGS ??= '1'; // keep near-api-js from dumping receipt logs
-const { connect, keyStores, KeyPair, providers, utils } = await import('near-api-js');
+import { connect, keyStores, KeyPair, providers, utils } from 'near-api-js';
+
+// Keep near-api-js from dumping every receipt log to the console.
+if (!process.env.GATEPASS_DEBUG) utils.Logger.overrideLogger(undefined as any);
 
 export const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const TGAS = 1_000_000_000_000n;

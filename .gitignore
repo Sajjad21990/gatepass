@@ -8,3 +8,4 @@ keys/
 out/
 .DS_Store
 host/ca/*.pub
+passes/

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Gatepass CLI launcher. Needs Node 22.18 or newer (runs TypeScript directly).
+exec node "$(dirname "$0")/../cli/gatepass.ts" "$@"
