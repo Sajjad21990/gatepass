@@ -1,0 +1,17 @@
+{
+  "name": "gatepass",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Pay on NEAR, get an SSH certificate for exactly the minutes you paid for",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "dependencies": {
+    "near-api-js": "5.1.1"
+  }
+}
