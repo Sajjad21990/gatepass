@@ -26,6 +26,20 @@ EXPIRED=124      # exit status when the deadline ends the session
 
 die() { printf 'gatepass: %s\n' "$1" >&2; exit "$2"; }
 
+# Everything the session starts inherits this and cannot undo it, so sshd and
+# the root reaper always get the CPU ahead of the renter's processes.
+renice -n 19 -p $$ > /dev/null 2>&1
+
+# Likewise inherited and irreversible: the session may use 64 processes fewer
+# than the container-wide limit for this user (ulimits.nproc in
+# docker-compose.yml). That gap is what lets root start a helper as this user
+# to kill a fork bomb (see gatepass-wipe).
+nproc_max=$(ulimit -Hu 2>/dev/null)
+case $nproc_max in
+    '' | *[!0-9]*) ;;
+    *) [ "$nproc_max" -gt 96 ] && ulimit -u $((nproc_max - 64)) 2>/dev/null ;;
+esac
+
 # ---- argument: the deadline, from the certificate (not from the client) ----
 [ $# -eq 1 ] || die "usage: gatepass-session <valid_before_unix_seconds>" 2
 deadline=$1

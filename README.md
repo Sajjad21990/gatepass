@@ -279,6 +279,57 @@ Events are logged as NEP-297 `EVENT_JSON` with standard `gatepass`:
 `ca_key_set`, `machine_registered`, `host_key_set`, `pass_issued`, `pass_failed`,
 `withdrawn`.
 
+## Security: what each side gets
+
+Both sides are strangers to each other, so access is restricted in both
+directions. Everything in this section is implemented in `host/` and
+`docker-compose.yml` and was tested on the demo host.
+
+### For the machine owner (what a renter cannot do)
+
+| Protection | How |
+| --- | --- |
+| Only paying renters get in | sshd accepts nothing but certificates signed by this machine's own CA key. No passwords, no `authorized_keys`. A certificate without a deadline is refused. |
+| Nobody gets in as root | The renter is an unprivileged user with zero Linux capabilities. `no-new-privileges` is set and the image has no setuid programs. |
+| The system cannot be changed | The root filesystem is read-only. The only writable places are size-capped, non-executable scratch areas (64 MB home, 32 MB `/tmp`). |
+| The machine cannot be taken down | Limits of 1 CPU, 256 MB memory and 128 processes per renter. A fork bomb and a memory hog were both tested: sshd stayed up and the next login worked. |
+| Nobody overstays | The session is cut at the paid deadline, and a root-owned reaper enforces it even if the renter freezes the in-session timer. |
+| No tunnelling through the machine's sshd | Port, agent and X11 forwarding and tunnels are disabled. |
+| Nothing is left behind | When a pass ends, every process is killed and every file the renter wrote is erased before the next renter can log in. |
+
+What a renter can still do, which an owner must plan for:
+
+- **Use the network.** Outbound connections are not restricted, so a renter
+  can reach the internet from the machine's IP address and anything else on
+  the same network. Put the machine on an isolated network or firewall its
+  egress.
+- **Use the resources paid for**, up to the limits above, for any purpose.
+- **Read what is world-readable** in the image: the Gatepass scripts, the sshd
+  configuration, hardware and kernel details.
+- **This is a container, not a virtual machine.** It shares the host's kernel,
+  so a kernel vulnerability is the remaining way out.
+
+### For the renter (what an owner or another renter cannot do)
+
+| Protection | How |
+| --- | --- |
+| The machine is yours alone | The contract sells one pass per machine at a time, and the host refuses any other pass until yours is over. |
+| Nobody inherits your files | Your files last for your whole pass, across reconnects, and are erased within seconds of it ending. The previous renter's files were erased before you arrived. |
+| You reach the right machine | If the owner published the machine's SSH host key on-chain, the CLI accepts only that key. |
+| Your key stays yours | The CLI makes a throwaway key pair for each pass. Only the public half goes on-chain; a certificate is useless without the private half. |
+| You pay for what the contract promised | The login user, expiry and price are fixed by the contract. If Chain Signatures does not sign, the whole payment is refunded. |
+
+What a renter must accept:
+
+- **The owner is root on the machine** and can see everything you run, type
+  and store there. Do not put secrets on a rented machine.
+- **An owner can take payment and not provide the service.** The contract
+  cannot see whether the machine let you in.
+- **Programs do not survive a disconnect.** Anything still running when your
+  connection closes is killed, including `nohup` and background jobs.
+- **Uploaded programs cannot be run on the demo host** (`sh script.sh` works,
+  `./binary` does not), and there is no sftp or scp.
+
 ## Trust model and limits
 
 Stated plainly, so nobody has to find these out the hard way.
@@ -306,13 +357,6 @@ Stated plainly, so nobody has to find these out the hard way.
   certificate only at login. See "Session deadline" below for how the deadline
   is enforced and what a renter can and cannot get around. A host that removes
   that software only gives away its own time.
-- **Renters share one unix user** on a machine. Two renters with overlapping
-  passes can see and signal each other's processes, and files left on disk
-  stay there. Port forwarding, agent forwarding and tunnels are disabled; sftp
-  and scp are not available on the demo host.
-- **Nothing runs in the background.** Every process a renter starts is killed
-  when their connection closes, not at the paid deadline, so `nohup`, `tmux`
-  and `screen` do not keep work alive across a disconnect.
 - **No revocation.** A pass cannot be cancelled before it expires.
 - **Certificates are public.** They are stored on-chain. That is safe: a
   certificate is useless without the renter's private key, which never leaves
@@ -340,8 +384,7 @@ Two things on the host enforce the paid time, and neither trusts the renter:
 
 Tested on the demo host (OpenSSH 10.0 on Alpine): a command, an interactive
 shell, child processes, `nohup`, `setsid`, a frozen wrapper and a killed
-wrapper are all cut off; two sessions with different deadlines do not affect
-each other; port forwards are refused.
+wrapper are all cut off, and port forwards are refused.
 
 What can still get around it:
 
@@ -358,7 +401,7 @@ What can still get around it:
 | `contract/` | The Rust contract. `src/cert.rs` is the OpenSSH certificate encoder; `src/lib.rs` is machines, passes, signing and earnings; `src/tests.rs` is the unit tests. |
 | `cli/` | The `gatepass` CLI (TypeScript, run directly by Node). |
 | `agent/` | `agent.ts`: an agent with a wallet and a budget that rents machines by itself. |
-| `host/` | The demo host (two containers in `docker-compose.yml`): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals` and `gatepass-reaper`. |
+| `host/` | The demo host (two sandboxed containers in `docker-compose.yml`): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals`, `gatepass-reaper` and `gatepass-wipe`. |
 | `dashboard/` | Read-only web page: machines, passes with live countdown, earnings. No wallet needed. |
 | `scripts/` | `demo.sh`, `agent-demo.sh`, `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
 | `spike/` | The first go/no-go experiment: a hand-built certificate signed by Chain Signatures directly from an account, before the contract existed. |

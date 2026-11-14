@@ -3,14 +3,18 @@
 #
 # sshd's AuthorizedPrincipalsCommand. sshd's root monitor process runs this, as
 # root, while it checks a certificate that the trusted CA has signed, i.e.
-# before the login user owns a single process. It does two things:
+# before the login user owns a single process. It does three things:
 #
 #   1. prints the login name, so the certificate must list it as a principal
 #      (the same rule sshd applies when no principals command is set);
 #   2. reads the deadline out of the certificate's force-command and records
 #      it for this connection, where only root can write:
 #          /run/gatepass/conn/<pid of sshd's monitor>   "<start time> <deadline>"
-#      gatepass-reaper enforces that record.
+#      gatepass-reaper enforces that record;
+#   3. reads the certificate's serial number, which identifies the pass, and
+#      hands it to gatepass-wipe: a new pass starts on a wiped machine, the
+#      same pass finds its files again, and a certificate that is expired or
+#      belongs to another pass is refused without touching anything.
 #
 # sshd calls this again for every certificate the client offers, the last time
 # for the one whose signature it then verifies, so the record always ends up
@@ -37,10 +41,15 @@ start=${20}
 
 tmp=$dir/cert.$$
 printf '%s %s\n' "$type" "$blob" > "$tmp" || exit 1
-deadline=$(ssh-keygen -L -f "$tmp" 2>/dev/null |
+cert=$(ssh-keygen -L -f "$tmp" 2>/dev/null)
+rm -f "$tmp"
+deadline=$(printf '%s\n' "$cert" |
     sed -n 's|^ *force-command /usr/local/bin/gatepass-session \([0-9]\{1,12\}\) *$|\1|p' |
     head -n 1)
-rm -f "$tmp"
+# The pass is identified by the certificate's serial number.
+serial=$(printf '%s\n' "$cert" | sed -n 's|^ *Serial: \([0-9]\{1,20\}\) *$|\1|p' | head -n 1)
+# "Valid: from 2026-11-14T06:30:00 to 2026-11-14T06:50:00" (or "forever").
+valid=$(printf '%s\n' "$cert" | sed -n 's|^ *Valid: ||p' | head -n 1)
 
 record=$dir/conn/$mon
 if [ -n "$deadline" ]; then
@@ -51,5 +60,32 @@ else
     echo "gatepass-principals: certificate has no gatepass-session deadline; refusing" >&2
     exit 1
 fi
+
+# A certificate that sshd is going to refuse anyway (expired, or not valid yet)
+# must not get as far as the wipe below: showing an old certificate is not a
+# way to erase the current renter's files. sshd makes its own check afterwards.
+now=$(date +%s) || exit 1
+[ "$deadline" -gt "$now" ] || exit 1
+epoch() { date -u -d "$(printf '%s' "$1" | tr 'T' ' ')" +%s 2>/dev/null; }
+case $valid in
+    forever) ;;
+    'from '*' to '*)
+        v_from=${valid#from }
+        v_to=${v_from#* to }
+        v_from=${v_from%% to *}
+        v_from=$(epoch "$v_from") && v_to=$(epoch "$v_to") || exit 1
+        [ "$v_from" -le "$now" ] && [ "$v_to" -gt "$now" ] || exit 1
+        ;;
+    'after '*) v_from=$(epoch "${valid#after }") && [ "$v_from" -le "$now" ] || exit 1 ;;
+    'before '*) v_to=$(epoch "${valid#before }") && [ "$v_to" -gt "$now" ] || exit 1 ;;
+    *) exit 1 ;;
+esac
+[ -n "$serial" ] || exit 1
+
+# Clean slate between passes (see gatepass-wipe): the same pass keeps its
+# files; a new pass gets a wiped machine before sshd goes on with this login;
+# any other pass is refused while the current one is still running.
+# No clean slate, no login.
+/usr/local/bin/gatepass-wipe login "$mon" "$serial" "$deadline" || exit 1
 
 printf '%s\n' "$user"

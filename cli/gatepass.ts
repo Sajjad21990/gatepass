@@ -253,7 +253,7 @@ DisableForwarding yes
 AuthorizedPrincipalsCommand /usr/local/bin/gatepass-principals %u %t %k
 AuthorizedPrincipalsCommandUser root
 
-# 3. Install these three scripts from host/ into /usr/local/bin, owned by root,
+# 3. Install these scripts from host/ into /usr/local/bin, owned by root,
 #    mode 0755:
 #      gatepass-session     forced as the login command of every pass; ends
 #                           the session when the paid time is up
@@ -261,9 +261,14 @@ AuthorizedPrincipalsCommandUser root
 #      gatepass-reaper      run it as a root service (GATEPASS_USER=${machine.login_user});
 #                           it enforces the deadline even if the renter stops
 #                           the session wrapper
+#      gatepass-wipe        erases the renter's files and processes between passes
 #
 # 4. Create the login user "${machine.login_user}" (the one registered for ${id}), then
-#    reload sshd. host/Dockerfile and host/entrypoint.sh show a complete setup.`);
+#    reload sshd. host/Dockerfile, host/entrypoint.sh and docker-compose.yml
+#    show a complete, sandboxed setup (read-only system, resource limits).
+#
+# 5. Publish the machine's SSH host key so renters accept only this machine:
+#      gatepass set-host-key ${id} /etc/ssh/ssh_host_ed25519_key.pub`);
 }
 
 async function register() {

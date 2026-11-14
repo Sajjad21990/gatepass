@@ -1,0 +1,195 @@
+#!/bin/sh
+# gatepass-wipe login <monitor-pid> <serial> <deadline> | reaper
+#
+# Clean slate between passes. Runs as root.
+#
+# A renter's FILES live as long as the pass they paid for: they survive
+# disconnects and are there again on the next login with the same certificate.
+# They are removed when the pass ends or a different pass starts. (Processes
+# are stricter: they never outlive their connection, see gatepass-reaper.)
+#
+# The pass that currently owns the machine is recorded where only root can
+# write, from the CA-signed certificate (see gatepass-principals):
+#
+#     /run/gatepass/pass        "<certificate serial> <deadline>"
+#
+# A wipe removes everything the login user can leave behind:
+#
+#   - processes still running as that user,
+#   - every file in the places that user can write: the home directory, /tmp,
+#     /var/tmp, /dev/shm, /dev/mqueue (the rest of the filesystem is read-only,
+#     see docker-compose.yml),
+#   - System V shared memory, semaphores and message queues,
+#
+# and puts the home directory back to its pristine state.
+#
+# It is called from two places, serialised by a lock:
+#
+#   login ...  by gatepass-principals, inside sshd, BEFORE a login is accepted.
+#                same pass as recorded       -> nothing is touched
+#                recorded pass still running -> login refused, nothing touched
+#                                               (one pass at a time; a stranger
+#                                               showing some other certificate
+#                                               cannot erase the renter's files)
+#                no pass, or it is over      -> wipe, then record the new pass
+#   reaper     by gatepass-reaper every second.
+#                recorded pass is over       -> wipe and forget it, so nothing
+#                                               waits around for the next login
+#                nobody logged in            -> kill stray processes (files stay)
+#
+# A login exits non-zero (login refused) if the wipe could not be completed.
+# If files survive a wipe, pid 1 is told to stop: the container restarts and
+# its tmpfs mounts come back empty.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset IFS ENV
+umask 077
+
+STATE=/run/gatepass
+LOGIN=${GATEPASS_USER:-renter}
+GRACE=${GATEPASS_REAPER_GRACE:-3}   # same grace as the reaper's deadline kill
+HOME_DIR=/home/$LOGIN
+WIPE_DIRS="$HOME_DIR /tmp /var/tmp /dev/shm /dev/mqueue"
+SKEL=/etc/gatepass/skel         # optional pristine home contents (root-owned)
+
+log() { echo "gatepass-wipe: $*" > /proc/1/fd/2 2>/dev/null || echo "gatepass-wipe: $*" >&2; }
+
+RUID=$(id -u "$LOGIN") || exit 1
+RGID=$(id -g "$LOGIN") || exit 1
+AUTH_UID=$(id -u sshd 2>/dev/null) || AUTH_UID=22
+
+# live_record PID: PID has a deadline record and is still that same process.
+live_record() {
+    read -r l_start l_rest 2>/dev/null < "$STATE/conn/$1" || return 1
+    l_stat=$( { tr '\n' ' ' < "/proc/$1/stat"; } 2>/dev/null ) || return 1
+    set -- ${l_stat##*) }
+    [ $# -ge 20 ] && [ "${20}" = "$l_start" ]
+}
+
+# preauth PID: sshd's monitor PID is still authenticating its client (its
+# child is the unprivileged sshd-auth process, not a logged-in user).
+preauth() { pgrep -P "$1" -U "$AUTH_UID" > /dev/null 2>&1; }
+
+# connected: some connection is logged in (or is past authentication and about
+# to be). Connections that are still authenticating do not count.
+connected() {
+    for c_file in "$STATE"/conn/[0-9]*; do
+        c_pid=${c_file##*/}
+        case $c_pid in '' | *[!0-9]*) continue ;; esac
+        live_record "$c_pid" || continue
+        preauth "$c_pid" || return 0
+    done
+    return 1
+}
+
+# Kill every process of the login user. Killing them one by one loses against
+# a fork bomb (whatever dies is replaced at once), so the kill is done by a
+# process running AS that user: kill(-1) then reaches every process of the
+# user in one step inside the kernel, and nothing can fork in between. The
+# helper can still be started while the bomb sits at the user's process limit
+# because sessions run with a lower limit than this one (see the ulimit in
+# gatepass-session and nproc in docker-compose.yml).
+purge() {
+    p_try=0
+    while pgrep -U "$RUID" > /dev/null 2>&1 && [ "$p_try" -lt 10 ]; do
+        su "$LOGIN" -s /bin/sh -c 'kill -9 -1' > /dev/null 2>&1 < /dev/null
+        pkill -KILL -U "$RUID"
+        sleep 0.1          # let init collect the dead before looking again
+        p_try=$((p_try + 1))
+    done
+    ! pgrep -U "$RUID" > /dev/null 2>&1
+}
+
+wipe() {
+    w_ok=0
+    for w_dir in $WIPE_DIRS; do
+        [ -d "$w_dir" ] || continue
+        find "$w_dir" -xdev -mindepth 1 -delete 2>/dev/null
+        if [ -n "$(find "$w_dir" -xdev -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            log "could not empty $w_dir"
+            w_ok=1
+        fi
+    done
+    for w_kind in m s q; do
+        for w_id in $(ipcs -$w_kind 2>/dev/null | awk '$1 ~ /^0x/ { print $2 }'); do
+            ipcrm -$w_kind "$w_id" 2>/dev/null
+        done
+    done
+    # The user owns the home directory and may have changed its mode (not its
+    # owner: that would take a privilege the user does not have).
+    if [ "$(stat -c %a:%u "$HOME_DIR" 2>/dev/null)" != "700:$RUID" ]; then
+        chmod 0700 "$HOME_DIR" || w_ok=1
+        [ "$(stat -c %u "$HOME_DIR")" = "$RUID" ] || w_ok=1
+    fi
+    if [ -d "$SKEL" ]; then
+        cp -a "$SKEL/." "$HOME_DIR/" && chown -R "$RUID:$RGID" "$HOME_DIR" || w_ok=1
+    fi
+    return $w_ok
+}
+
+clean_slate() {
+    if purge && wipe; then
+        return 0
+    fi
+    log "wipe incomplete; stopping the container so that it restarts empty"
+    kill -TERM 1
+    return 1
+}
+
+# current_pass: sets P_SERIAL and P_DEADLINE from the record, fails if none.
+current_pass() {
+    read -r P_SERIAL P_DEADLINE 2>/dev/null < "$STATE/pass" || return 1
+    case $P_SERIAL in '' | *[!0-9]*) return 1 ;; esac
+    case $P_DEADLINE in '' | *[!0-9]*) return 1 ;; esac
+}
+
+mode=${1:-}
+exec 9> "$STATE/lock" || exit 1
+
+case $mode in
+    login)
+        serial=${3:-} deadline=${4:-}
+        case $serial in '' | *[!0-9]*) exit 1 ;; esac
+        case $deadline in '' | *[!0-9]*) exit 1 ;; esac
+        flock -x 9 || exit 1
+        now=$(date +%s) || exit 1
+        if current_pass; then
+            # Same pass (same serial and same deadline): the renter is coming
+            # back; their files stay exactly as they left them.
+            if [ "$P_SERIAL" = "$serial" ] && [ "$P_DEADLINE" = "$deadline" ]; then
+                exit 0
+            fi
+            if [ "$now" -lt $((P_DEADLINE + GRACE)) ]; then
+                log "login with pass $serial refused: pass $P_SERIAL owns this machine until $P_DEADLINE"
+                exit 1
+            fi
+        fi
+        clean_slate || exit 1
+        printf '%s %s\n' "$serial" "$deadline" > "$STATE/pass.new" || exit 1
+        mv -f "$STATE/pass.new" "$STATE/pass" || exit 1
+        log "machine wiped; pass $serial owns it until $deadline"
+        ;;
+    reaper)
+        flock -n -x 9 || exit 0
+        now=$(date +%s) || exit 0
+        if current_pass && [ "$now" -ge $((P_DEADLINE + GRACE)) ]; then
+            if clean_slate; then
+                rm -f "${STATE:?}/pass"
+                log "pass $P_SERIAL is over: removed everything $LOGIN left behind"
+            fi
+            exit 0
+        fi
+        # Within a pass the files stay, but processes do not outlive their
+        # connection. The reaper kills strays one by one; this catches what
+        # that cannot (a fork bomb left behind).
+        if ! connected && pgrep -U "$RUID" > /dev/null 2>&1; then
+            purge
+        fi
+        ;;
+    *)
+        echo "usage: gatepass-wipe login <monitor-pid> <serial> <deadline> | reaper" >&2
+        exit 2
+        ;;
+esac
+exit 0

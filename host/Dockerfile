@@ -24,6 +24,19 @@ COPY --chown=root:root --chmod=0755 gatepass-principals /usr/local/bin/gatepass-
 COPY --chown=root:root --chmod=0755 gatepass-reaper /usr/local/bin/gatepass-reaper
 COPY --chown=root:root --chmod=0755 entrypoint.sh /usr/local/bin/gatepass-entrypoint
 
+# Clean slate between passes: wipes everything renter can write when a pass
+# ends, and before a different pass logs in (see the script's header).
+COPY --chown=root:root --chmod=0755 gatepass-wipe /usr/local/bin/gatepass-wipe
+
+# No setuid/setgid programs: renter must have no way to become anyone else.
+# (docker-compose.yml also sets no-new-privileges and drops capabilities.)
+# NOTE: every layer added to this file must stay BELOW the first RUN, which
+# generates the ssh host keys; changing that RUN or anything above it makes
+# Docker run it again and gives the machine a new host key.
+RUN find / -xdev -type f -perm /6000 -exec chmod a-s {} + ; \
+    find / -xdev -type d -perm /2000 -exec chmod g-s {} + ; \
+    true
+
 EXPOSE 22
 
 # Starts gatepass-reaper, then execs `sshd -D -e`: sshd is pid 1, in the

@@ -21,6 +21,10 @@
 #      its session with setsid and its parent is gone, or its connection has
 #      closed) is killed at once. Nothing outlives its connection.
 #
+#   3. When the pass that owns the machine is over, everything the login
+#      user created is removed (gatepass-wipe): files, shared memory, stray
+#      processes. Until then the files stay, across disconnects.
+#
 # The wall clock is read on every pass, so a suspended laptop or a clock step
 # is picked up within a second.
 
@@ -127,5 +131,8 @@ while :; do
                 ;;
         esac
     done
+    # Once the pass is over: clean slate for the next renter. Until then only
+    # stray processes are removed; the renter's files stay.
+    /usr/local/bin/gatepass-wipe reaper
     sleep 1
 done

@@ -1,26 +1,76 @@
-# Gatepass demo host: an sshd that only accepts OpenSSH user certificates
-# signed by the CA in ./host/ca/gatepass_ca.pub.
+# Gatepass demo hosts: sshd that only accepts OpenSSH user certificates signed
+# by the CA in the mounted CA directory.
 #
 #   docker compose up -d --build
 #   ssh -p 2222 renter@127.0.0.1        (with a cert whose principal is "renter")
-#   docker compose logs -f host         (auth decisions)
+#   docker compose logs -f host         (auth decisions, reaper, wipes)
+
+# The container IS the renter's sandbox, so the limits live here. Both machines
+# share them; change a number in this block and `docker compose up -d`.
+x-machine: &machine
+  build: ./host
+  # Also the safety net of gatepass-wipe: if a wipe ever fails, it stops sshd
+  # and the container comes back with empty tmpfs mounts and no processes.
+  restart: unless-stopped
+
+  # --- What a renter can write, and how much --------------------------------
+  # The image is read-only. These tmpfs mounts are the ONLY writable places;
+  # they live in memory (counted against mem_limit), are capped in size and
+  # file count, and gatepass-wipe empties them when a pass ends (files survive
+  # reconnects within the same pass). noexec: a
+  # renter cannot run a program they uploaded (`sh script` still works). To
+  # allow that in the home directory, change its `noexec` to `exec`.
+  read_only: true
+  tmpfs:
+    - /run:size=1m,mode=0755,noexec,nosuid,nodev                  # root only: sshd pid file, /run/gatepass
+    - /tmp:size=32m,nr_inodes=4096,mode=1777,noexec,nosuid,nodev
+    - /var/tmp:size=8m,nr_inodes=1024,mode=1777,noexec,nosuid,nodev
+    - /home/renter:size=64m,nr_inodes=8192,uid=1000,gid=1000,mode=0700,noexec,nosuid,nodev
+  shm_size: 16m                                                    # /dev/shm
+
+  # --- How much of the owner's box a renter can use ---------------------------
+  mem_limit: 256m          # RAM for everything in the container, tmpfs included
+  memswap_limit: 256m      # same value = no swap on top
+  cpus: 1.0                # at most one CPU core's worth of time
+  pids_limit: 256          # processes+threads in the container, hard ceiling
+  ulimits:
+    # Processes owned by renter. A session gets 64 fewer than this (128, see
+    # gatepass-session); root is not limited by it. Keep it below pids_limit so
+    # that sshd and the reaper can always start what they need.
+    nproc: 192
+    nofile:
+      soft: 1024
+      hard: 1024
+
+  # --- Privileges -----------------------------------------------------------------
+  security_opt:
+    - no-new-privileges:true   # setuid programs and file capabilities do nothing
+  cap_drop:
+    - ALL
+  cap_add:
+    - SETUID          # sshd: become renter for the session
+    - SETGID          # sshd: same, for the group ids
+    - SYS_CHROOT      # sshd: chroot its pre-authentication process into /var/empty
+    - CHOWN           # sshd: hand the session's pty to renter (interactive logins fail without it)
+    - KILL            # gatepass-reaper: root may not signal renter's processes without it
+    - DAC_OVERRIDE    # gatepass-wipe: delete renter's files whatever their permissions
+    - FOWNER          # gatepass-wipe: put the home directory's mode back if renter changed it
+
 services:
   host:
-    build: ./host
+    <<: *machine
     ports:
       - "127.0.0.1:2222:22"
     volumes:
       # Mount the DIRECTORY (not the single file) so that a rewritten or
       # replaced gatepass_ca.pub is visible in the container without a restart.
       - ./host/ca:/etc/ssh/gatepass-ca:ro
-    restart: unless-stopped
 
   # A second, separate machine (port 2223) with its own CA directory. Used by
   # scripts/agent-demo.sh so the agent has two machines to choose between.
   host-b:
-    build: ./host
+    <<: *machine
     ports:
       - "127.0.0.1:2223:22"
     volumes:
       - ./host/ca-b:/etc/ssh/gatepass-ca:ro
-    restart: unless-stopped
