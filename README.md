@@ -56,6 +56,19 @@ A machine has one renter at a time: while a pass is live, the contract refuses
 to sell another for that machine. Owners can publish the machine's SSH host key
 on-chain, and the renter's CLI then accepts only that key.
 
+## Screenshots
+
+All from real runs on NEAR testnet: the live web page, and in the split views the real terminal beside it.
+
+| | |
+| --- | --- |
+| ![The page with a free machine: a shut laptop, the timer dial and the price](docs/screenshots/1-free-laptop.jpg) | ![The pass being signed: the lid lifts while the terminal waits for NEAR Chain Signatures](docs/screenshots/2-pass-being-signed.jpg) |
+| **Free.** Lid shut, set the minutes, copy the rent command. | **Paying.** The contract has the payment; Chain Signatures is signing the pass. |
+| ![The machine in use: lid open with a countdown, the terminal logged in](docs/screenshots/3-in-use-countdown.jpg) | ![Time is up: the lid is shut again and a second login is refused](docs/screenshots/4-time-up-refused.jpg) |
+| **In use.** Logged in; the countdown runs to the paid deadline. | **Time up.** Session cut off, lid shut, the same pass is refused. |
+| ![An AI agent renting the small board by itself and answering 5133](docs/screenshots/5-agent-rents.jpg) | ![The GPU tower as the selected machine](docs/screenshots/7-gpu-tower.jpg) |
+| **An agent rents by itself** and reports what it spent. | **Other machines** are drawn as a GPU tower or a small board. |
+
 ## Run the demo
 
 You need Docker (running), Node 22.18 or newer, and the OpenSSH client
