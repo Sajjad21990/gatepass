@@ -279,7 +279,6 @@ What can still get around it:
 | `dashboard/` | Read-only web page: machines, passes with live countdown, earnings. No wallet needed. |
 | `scripts/` | `demo.sh`, `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
 | `spike/` | The first go/no-go experiment: a hand-built certificate signed by Chain Signatures directly from an account, before the contract existed. |
-| `GATEPASS_BRIEF.md` | The project brief this was built from. |
 
 ## Built with
 
@@ -294,8 +293,7 @@ What can still get around it:
   Docker for the demo host.
 - No templates were used.
 - **AI assistance:** the code, tests and this README were written with Claude
-  Code (Anthropic's Claude) working from the brief in `GATEPASS_BRIEF.md`,
-  directed by the author.
+  Code (Anthropic's Claude), directed by the author.
 
 ## License
 
