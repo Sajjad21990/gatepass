@@ -144,15 +144,16 @@ chat API with tool calling works):
 | `AGENT_LLM_BASE_URL` | Default `https://cloud-api.near.ai/v1` (NEAR AI Cloud). |
 | `AGENT_LLM_MODEL` | Default `z-ai/glm-5.3-flash`. |
 
-- **OpenAI:** set `AGENT_LLM_BASE_URL=https://api.openai.com/v1`, a model such
-  as `gpt-5-mini`, and your key. Not tested here (no key was available).
-- **Model cost:** the run above took 4 model calls, about 8,500 input and
-  2,400 output tokens, and the script prints these counts at the end of every
-  run. At a hosted small model's prices that is well under one US cent per run.
-- **Tested:** with `qwen3:8b` served locally by Ollama
+- **Tested with OpenAI:** `AGENT_LLM_BASE_URL=https://api.openai.com/v1` and
+  `AGENT_LLM_MODEL=gpt-5-mini`. It asked for a quote, rented the cheaper
+  machine for one minute, ran one command and answered: 5 model calls, 3,999
+  input and 2,122 output tokens, about half a US cent at list prices.
+- **Tested with a local model:** `qwen3:8b` served by Ollama
   (`AGENT_LLM_BASE_URL=http://127.0.0.1:11434/v1`, any non-empty key). The
   output above is from that run. Asked "What is 17 times 23?", the same agent
   answered without renting anything and spent nothing.
+- **Model cost:** the script prints the token counts at the end of every run,
+  so the cost of a run can be worked out for any provider.
 - **Not tested:** the NEAR AI Cloud default. The request format follows its
   documentation, but no API key was available while building this.
 - **No key:** the script falls back to a fixed rule (cheapest machine, one
