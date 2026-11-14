@@ -5,7 +5,9 @@ No sign-up with the machine's owner, no shared passwords, and no person holds th
 
 Built at NEAR Hackathon. Runs on NEAR testnet.
 
-Demo video (2 minutes): https://x.com/Sajjad21990/status/2121579037571371429
+Demo video (2 minutes 17 seconds): https://x.com/Sajjad21990/status/2121579037571371429
+The same file is in this repository at [docs/gatepass-demo.mp4](docs/gatepass-demo.mp4), with every
+narration line burned in as captions.
 
 ## The problem
 
