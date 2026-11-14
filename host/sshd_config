@@ -23,3 +23,26 @@ LogLevel VERBOSE
 # Behind Docker's port mapping every client shows up as the bridge gateway IP,
 # so a few rejected demo logins would lock out the valid ones too. Demo only.
 PerSourcePenalties no
+
+# --- Session deadline (see gatepass-session) ---
+# The certificate's force-command runs /usr/local/bin/gatepass-session, which
+# kills the session's PROCESSES at the deadline. Forwarded ports, tunnels and
+# agent/X11 channels are not processes: they live inside sshd and would stay
+# open after the wrapper has done its work. So no forwarding of any kind.
+DisableForwarding yes
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+AllowAgentForwarding no
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+
+# Nothing of the user's may run before or around the forced command:
+# no ~/.ssh/rc, no ~/.ssh/environment. (No AcceptEnv line anywhere either, so
+# the client cannot set environment variables; keep it that way.)
+PermitUserRC no
+PermitUserEnvironment no
+
+# A connection with no session open (ssh -N) runs no wrapper, so nothing would
+# ever close it. sshd drops it after this many seconds without a channel.
+UnusedConnectionTimeout 30

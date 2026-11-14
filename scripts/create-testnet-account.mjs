@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Create a throwaway, faucet-funded NEAR TESTNET account and write it to ../.env
-// (git-ignored). Refuses to touch an existing .env. The private key is never printed.
+// Create a throwaway, faucet-funded NEAR TESTNET account and write it to an env
+// file (git-ignored). Refuses to overwrite an existing file. The private key is
+// never printed.
 //
-// Usage: node create-testnet-account.mjs [account-name.testnet]
+// Usage: node scripts/create-testnet-account.mjs [--env .env.renter] [account-name.testnet]
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -11,16 +12,20 @@ import { fileURLToPath } from 'node:url';
 import { KeyPair } from 'near-api-js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ENV_FILE = path.join(HERE, '..', '.env');
+const args = process.argv.slice(2);
+const envFlag = args.indexOf('--env');
+const envName = envFlag > -1 ? args.splice(envFlag, 2)[1] : '.env';
+if (!/^\.env(\.[a-z0-9_-]+)?$/.test(envName) || envName === '.env.example') throw new Error('--env must be .env or .env.<name>');
+const ENV_FILE = path.join(HERE, '..', envName);
 const HELPER = 'https://helper.testnet.near.org/account';
 const RPC = 'https://test.rpc.fastnear.com';
 
 if (fs.existsSync(ENV_FILE)) {
-  console.error('.env already exists; not overwriting it.');
+  console.error(`${envName} already exists; not overwriting it.`);
   process.exit(1);
 }
 
-const accountId = process.argv[2] || `gp-spike-${crypto.randomBytes(4).toString('hex')}.testnet`;
+const accountId = args[0] || `gp-${crypto.randomBytes(5).toString('hex')}.testnet`;
 if (!accountId.endsWith('.testnet')) throw new Error('testnet accounts only');
 
 const keyPair = KeyPair.fromRandom('ed25519');
@@ -52,10 +57,10 @@ for (let i = 0; i < 10; i++) {
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'view_account', finality: 'final', account_id: accountId } }),
   }).then((x) => x.json());
   if (r.result) {
-    console.log(`created ${accountId} with ${(Number(BigInt(r.result.amount) / 10n ** 21n) / 1000).toFixed(3)} NEAR; key written to .env`);
+    console.log(`created ${accountId} with ${(Number(BigInt(r.result.amount) / 10n ** 21n) / 1000).toFixed(3)} NEAR; key written to ${envName}`);
     process.exit(0);
   }
   await new Promise((ok) => setTimeout(ok, 1500));
 }
-console.error(`Faucet said OK but ${accountId} is not visible on ${RPC} yet. .env was written.`);
+console.error(`Faucet said OK but ${accountId} is not visible on ${RPC} yet. ${envName} was written.`);
 process.exit(1);

@@ -12,6 +12,10 @@ RUN apk add --no-cache openssh-server \
 
 COPY sshd_config /etc/ssh/sshd_config
 
+# Session-deadline wrapper: every certificate's force-command points here.
+# Root-owned and not writable by renter, so a session cannot replace it.
+COPY --chown=root:root --chmod=0755 gatepass-session /usr/local/bin/gatepass-session
+
 EXPOSE 22
 
 # -D: stay in the foreground, -e: log to stderr (=> `docker compose logs host`).

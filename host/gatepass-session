@@ -1,0 +1,231 @@
+#!/bin/sh
+# gatepass-session <valid_before_unix_seconds>
+#
+# Session-deadline wrapper for the Gatepass demo host. sshd checks a
+# certificate's validity only at login, so every Gatepass certificate carries
+#
+#     force-command="/usr/local/bin/gatepass-session <valid_before>"
+#
+# and sshd runs this script instead of whatever the client asked for. It runs
+# the client's command ($SSH_ORIGINAL_COMMAND) or a login shell, and at the
+# deadline kills it together with everything else the session started.
+#
+# It runs as the login user, not as root. See "limits" in the README: the
+# user can signal this script like any other process of their own.
+#
+# Exit status: the command's own status if it finished in time, 124 if the
+# deadline cut it off (or had already passed), 2 on a malformed argument.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset IFS ENV CDPATH
+
+GRACE=2          # seconds between TERM/HUP and KILL
+EXPIRED=124      # exit status when the deadline ends the session
+
+die() { printf 'gatepass: %s\n' "$1" >&2; exit "$2"; }
+
+# ---- argument: the deadline, from the certificate (not from the client) ----
+[ $# -eq 1 ] || die "usage: gatepass-session <valid_before_unix_seconds>" 2
+deadline=$1
+case $deadline in
+    '' | *[!0-9]*) die "deadline is not an integer" 2 ;;
+esac
+[ ${#deadline} -le 12 ] || die "deadline is out of range" 2
+while [ ${#deadline} -gt 1 ] && [ "${deadline#0}" != "$deadline" ]; do
+    deadline=${deadline#0}          # no leading zeros: $(( )) would read octal
+done
+
+iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unix $1"; }
+
+now=$(date +%s)
+if [ "$now" -ge "$deadline" ]; then
+    die "this pass expired at $(iso "$deadline"); no session started" "$EXPIRED"
+fi
+
+# ---- /proc helpers ----------------------------------------------------------
+# pinfo PID: sets P_STATE P_PPID P_SID P_START, fails if the process is gone.
+pinfo() {
+    P_RAW=$( { tr '\n' ' ' < "/proc/$1/stat"; } 2>/dev/null ) || return 1
+    [ -n "$P_RAW" ] || return 1
+    # Everything after the last ") " is numeric (the comm field may hold
+    # anything, including spaces and parentheses).
+    set -- ${P_RAW##*) }
+    [ $# -ge 20 ] || return 1
+    P_STATE=$1 P_PPID=$2 P_SID=$4 P_START=${20}
+}
+
+uid_of() { awk '/^Uid:/ { print $2; exit }' "/proc/$1/status" 2>/dev/null; }
+
+# The GATEPASS_SESSION value in a process's environment, if readable.
+marker() {
+    { tr '\0' '\n' < "/proc/$1/environ"; } 2>/dev/null |
+        sed -n 's/^GATEPASS_SESSION=//p' | head -n 1
+}
+
+# is_conn PID: PID is sshd's per-connection process for this user, i.e. it is
+# ours and its parent is a root process other than init. Orphans are adopted by
+# pid 1 and nothing of ours can be born under another root process, so this
+# cannot be faked from inside a session.
+is_conn() {
+    case " $CONN " in *" $1 "*) return 0 ;; esac
+    case " $NOTCONN " in *" $1 "*) return 1 ;; esac
+    if [ "$1" -gt 1 ] && [ "$(uid_of "$1")" = "$MYUID" ] && pinfo "$1" &&
+        [ "$P_PPID" -gt 1 ] && [ "$(uid_of "$P_PPID")" = 0 ]; then
+        CONN="$CONN $1"
+        return 0
+    fi
+    NOTCONN="$NOTCONN $1"
+    return 1
+}
+
+# live_session SID: SID is another ssh session that is still open, i.e. its
+# leader is alive and was started directly by an sshd connection process.
+live_session() {
+    case " $LIVE " in *" $1 "*) return 0 ;; esac
+    case " $DEAD " in *" $1 "*) return 1 ;; esac
+    if [ "$1" -gt 1 ] && [ "$1" != "$SID" ] && pinfo "$1" &&
+        [ "$P_STATE" != Z ] && [ "$P_SID" = "$1" ] && is_conn "$P_PPID"; then
+        LIVE="$LIVE $1"
+        return 0
+    fi
+    DEAD="$DEAD $1"
+    return 1
+}
+
+# live_token "<sid>:<starttime>": names a live session other than ours.
+live_token() {
+    t_sid=${1%%:*}
+    case $t_sid in '' | *[!0-9]*) return 1 ;; esac
+    live_session "$t_sid" && pinfo "$t_sid" && [ "$t_sid:$P_START" = "$1" ]
+}
+
+# sweep SIGNAL...: signal every process of this user that belongs to this
+# session, or that belongs to no open session at all. Spared: sshd's own
+# connection processes, and processes of other sessions that are still open.
+# Sets HIT to the pids signalled.
+sweep() {
+    HIT='' CONN='' NOTCONN='' LIVE='' DEAD=''
+    for s_dir in /proc/[0-9]*; do
+        s_pid=${s_dir#/proc/}
+        case " $EXCLUDE " in *" $s_pid "*) continue ;; esac
+        [ "$(uid_of "$s_pid")" = "$MYUID" ] || continue
+        pinfo "$s_pid" || continue
+        [ "$P_STATE" != Z ] || continue
+        s_ppid=$P_PPID s_sid=$P_SID
+        [ "$s_ppid" != 0 ] || continue      # e.g. docker exec: not from ssh
+        if [ "$s_sid" != "$SID" ]; then
+            is_conn "$s_pid" && continue    # sshd connection process
+            is_conn "$s_ppid" && continue   # leader of another session
+            s_mark=$(marker "$s_pid")
+            if [ "$s_mark" != "$TOKEN" ]; then
+                live_session "$s_sid" && continue
+                [ -n "$s_mark" ] && live_token "$s_mark" && continue
+            fi
+        fi
+        for s_sig in "$@"; do kill "-$s_sig" "$s_pid" 2>/dev/null; done
+        HIT="$HIT $s_pid"
+    done
+}
+
+# reap GRACE_SECONDS: TERM + HUP (interactive shells ignore TERM) + CONT (so
+# that stopped processes see them), wait up to the grace period, then KILL
+# until a full pass over /proc finds nothing left.
+reap() {
+    sweep TERM HUP CONT
+    r_ticks=$(($1 * 10))
+    while [ -n "$HIT" ] && [ "$r_ticks" -gt 0 ]; do
+        r_alive=''
+        for r_pid in $HIT; do
+            pinfo "$r_pid" && [ "$P_STATE" != Z ] && r_alive="$r_alive $r_pid"
+        done
+        HIT=$r_alive
+        [ -n "$HIT" ] || break
+        sleep 0.1
+        r_ticks=$((r_ticks - 1))
+    done
+    r_pass=0
+    while sweep KILL; [ -n "$HIT" ] && [ "$r_pass" -lt 25 ]; do
+        r_pass=$((r_pass + 1))
+        sleep 0.05
+    done
+}
+
+time_is_up() { printf '\r\ngatepass: time is up, session closed\r\n' >&2; }
+
+# ---- who we are ---------------------------------------------------------------
+MYUID=$(id -u)
+pinfo $$ || die "cannot read /proc" 1
+SID=$P_SID                       # sshd makes the forced command a session leader
+pinfo "$SID" || die "cannot read /proc" 1
+TOKEN=$SID:$P_START
+# Inherited by everything the session starts, so that a process which leaves
+# the session with setsid(1) can still be found. Informational for the user.
+GATEPASS_SESSION=$TOKEN
+GATEPASS_DEADLINE=$deadline
+export GATEPASS_SESSION GATEPASS_DEADLINE
+
+# ---- the watchdog -------------------------------------------------------------
+watchdog() {
+    # Terminal signals (^C, ^Z, hangup) must not stop the clock. The stop
+    # signals are ignored, which the sleep below inherits. HUP and TERM get a
+    # handler instead, so that sleep keeps their default action and the final
+    # sweep can remove it with a plain TERM; if they hit it early, the loop
+    # simply sleeps again.
+    trap '' INT QUIT TSTP TTIN TTOU USR1
+    trap ':' HUP TERM
+    read -r w_self w_rest < /proc/self/stat
+    while now=$(date +%s) && [ "$now" -lt "$deadline" ]; do
+        w_left=$((deadline - now))
+        if [ "$w_left" -gt 1 ]; then sleep $((w_left - 1)); else sleep 0.1; fi
+    done
+    kill -USR1 $$ 2>/dev/null
+    time_is_up
+    EXCLUDE="$$ $SID $w_self"
+    reap "$GRACE"
+}
+
+shell=${SHELL:-/bin/sh}
+[ -x "$shell" ] || shell=/bin/sh
+
+left=$((deadline - now))
+printf 'gatepass: session ends in %ss (at %s)\n' "$left" "$(iso "$deadline")" >&2
+
+expired=0
+trap 'expired=1' USR1
+# Handlers, not "ignore": an ignored signal would stay ignored in the user's
+# command, and ^C would stop working there.
+trap ':' INT QUIT TSTP TTIN TTOU HUP TERM
+
+watchdog < /dev/null > /dev/null &
+wd=$!
+
+if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
+    "$shell" -c "$SSH_ORIGINAL_COMMAND"
+else
+    "$shell" -l
+fi
+status=$?
+
+# From here on nothing of the user's is started, so these can be ignored.
+trap '' INT QUIT TSTP TTIN TTOU HUP TERM
+
+now=$(date +%s)
+if [ "$expired" = 1 ] || [ "$now" -ge "$deadline" ]; then
+    [ "$expired" = 1 ] || time_is_up        # the watchdog never got to say it
+    status=$EXPIRED
+    grace=$((deadline + GRACE - now))
+    [ "$grace" -ge 0 ] || grace=0
+    [ "$grace" -le "$GRACE" ] || grace=$GRACE
+else
+    grace=$GRACE
+fi
+
+# Either way the session is over: stop the watchdog and remove whatever the
+# session left behind (background jobs, nohup, setsid).
+kill -KILL "$wd" 2>/dev/null
+wait "$wd" 2>/dev/null
+EXCLUDE="$$ $SID"
+reap "$grace"
+
+exit "$status"
