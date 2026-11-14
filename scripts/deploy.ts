@@ -49,7 +49,10 @@ async function main() {
 
   const envFile = path.join(ROOT, '.env');
   const env = fs.readFileSync(envFile, 'utf8');
-  if (!/^GATEPASS_CONTRACT=/m.test(env)) {
+  if (/^GATEPASS_CONTRACT=\s*$/m.test(env)) {
+    fs.writeFileSync(envFile, env.replace(/^GATEPASS_CONTRACT=\s*$/m, `GATEPASS_CONTRACT=${target}`));
+    console.log('wrote GATEPASS_CONTRACT to .env');
+  } else if (!/^GATEPASS_CONTRACT=/m.test(env)) {
     fs.appendFileSync(envFile, `${env.endsWith('\n') ? '' : '\n'}GATEPASS_CONTRACT=${target}\n`);
     console.log('wrote GATEPASS_CONTRACT to .env');
   }
