@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gatepass: rent a computer by the minute</title>
+<title>Gatepass: this computer opens when you pay</title>
+<meta name="description" content="This computer opens when you pay. Rent it by the minute. When your time is up, it locks itself. No account, no password, and nobody holds the key.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@500;600;700;800&family=Funnel+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -351,12 +352,14 @@ body[data-state="expired"] .stage{background:
 .h1{text-wrap:balance}
 .h1__id{display:block;font-size:40px;line-height:1.08;letter-spacing:-.018em;overflow-wrap:anywhere}
 .h1__rest{display:block;font-size:30px;line-height:1.15;letter-spacing:-.01em;font-weight:600;color:var(--light);margin-top:4px}
-.say .h1--plain{font-size:54px}
+.say .h1--plain{font-size:42px;line-height:1.08;letter-spacing:-.02em}
+@media (min-width:1321px){.say .h1--plain{font-size:46px;width:480px;position:relative;z-index:1}}
 .lede{text-wrap:pretty}
 .lede a,.note a,.pfacts a{color:#fff;text-underline-offset:3px;overflow-wrap:anywhere}
 .use{margin-top:20px}
 .use h3{font:600 18.5px/1.25 var(--display)}
 .use .btn{margin-top:2px}
+.use .note{margin-top:10px}
 .bigcount{font:700 84px/1 var(--display);letter-spacing:-.03em;color:var(--light);margin-top:14px;font-variant-numeric:tabular-nums}
 
 /* note pinned above the shut lid: what this machine is */
@@ -369,7 +372,7 @@ body[data-state="expired"] .stage{background:
 .pin__price b{color:#fff;font:700 19px/1 var(--display)}
 .pin .status{margin-top:6px;color:#fff;font-size:16px}
 .pin__note{display:block;margin-top:6px}
-.pin code{display:block;margin-top:2px;color:#E5EEEE;overflow-wrap:anywhere}
+.pin code{display:block;margin-top:4px;color:#E5EEEE;white-space:nowrap;overflow:hidden}
 .lt.is-off{display:none}
 .altdev{position:absolute;left:0;right:0;bottom:0;top:176px;display:flex;align-items:flex-end;justify-content:center}
 .altdev .gp-device{max-width:440px}
@@ -410,11 +413,14 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
 .bay__conn{font-size:14px;color:var(--ink-2);margin-top:3px;overflow-wrap:anywhere}
 .bay__conn code{font-size:13.5px}
 .bay__name{overflow-wrap:anywhere}
-.bay__key{font-size:14.5px;color:var(--ink-2);margin-top:8px}
+.bay__key{margin-top:10px}
+.bay__row{min-height:0}
+.foot{padding:22px 0 26px;border-top:1px solid var(--line);font-size:15px;color:var(--ink-2)}
+.foot a{text-underline-offset:3px}
 .bay__owner a{overflow-wrap:anywhere}
 .bay[data-av="busy"] .led{fill:var(--busy)}
 .bay[data-av="paused"] .led{fill:var(--off)}
-.bay.is-on .bay__name::after{content:"On the desk above"}
+.bay.is-on .bay__name::after{content:none}
 .bay.is-paused{opacity:.62}
 .paused{margin-top:34px;border-top:1px solid var(--line);padding-top:16px}
 .paused summary{cursor:pointer;font-weight:600;width:max-content}
@@ -457,7 +463,7 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
 @media (max-width:700px){
   body{font-size:16.5px}
   .wrap{padding:0 18px}
-  .say .h1--plain{font-size:40px}
+  .say .h1--plain{font-size:34px}
   .h1__id{font-size:32px}
   .h1__rest{font-size:25px}
   .page .h1{font-size:36px}
@@ -498,7 +504,6 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
       <a href="#agents" data-nav="agents">Agents</a>
     </nav>
     <span class="live" id="live" role="status"><i aria-hidden="true"></i><span id="liveText">Reading the chain</span></span>
-    <a class="net" id="contractLink" target="_blank" rel="noopener noreferrer">NEAR testnet</a>
   </div>
 </header>
 
@@ -509,25 +514,25 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
   <div class="wrap stage__in">
 
     <div class="say">
-      <h1 class="h1 h1--plain" id="h1">Rent a computer by the minute.</h1>
-      <p class="lede" id="lede">Reading machines from the chain.</p>
+      <h1 class="h1 h1--plain" id="h1">This computer opens when you pay.</h1>
+      <p class="lede" id="lede">Reading the contract.</p>
       <ol class="steps" id="steps" aria-label="How renting works">
         <li>Pick a machine</li>
-        <li>Turn the dial, copy the rent command</li>
-        <li id="step3">Run it in a terminal: the lid opens in about 7 seconds</li>
+        <li>Set the minutes</li>
+        <li>Run one command</li>
       </ol>
       <ol class="prog" id="prog" hidden>
-        <li class="is-done"><span class="prog__dot" aria-hidden="true">1</span><div><h3>The contract checked the payment and wrote the pass</h3><p><code id="pgContract">gatepass.testnet</code> took the payment and reserved this machine for one renter.</p></div></li>
-        <li class="is-now"><span class="prog__dot" aria-hidden="true">2</span><div><h3>NEAR Chain Signatures is signing it</h3><p>Independent computers sign together, and only because the contract asked. Nobody holds that key: not us, not the owner.</p></div></li>
-        <li><span class="prog__dot" aria-hidden="true">3</span><div><h3>The pass is ready</h3><p>It works on this machine and nowhere else, for <span id="pgMinutes">5 minutes</span>.</p></div></li>
+        <li class="is-done"><span class="prog__dot" aria-hidden="true">1</span><div><h3>Payment checked</h3><p>The contract took the payment and wrote the pass.</p></div></li>
+        <li class="is-now"><span class="prog__dot" aria-hidden="true">2</span><div><h3>Pass signed</h3><p>NEAR Chain Signatures signs it. Nobody holds that key.</p></div></li>
+        <li><span class="prog__dot" aria-hidden="true">3</span><div><h3>Pass ready</h3><p>It works on this machine only.</p></div></li>
       </ol>
-      <p class="refund" id="refund" hidden>If signing fails, the payment is refunded automatically. Nobody pays for a lid that stays shut.</p>
+      <p class="refund" id="refund" hidden>If signing fails, the payment is refunded automatically.</p>
       <div class="bigcount" id="bigCount" hidden></div>
       <div class="use" id="use" hidden>
-        <h3>Whoever bought it connects with</h3>
+        <h3>The buyer connects with</h3>
         <div class="cmd" id="sshCmd"></div>
         <button class="btn btn--small" id="copySsh" type="button">Copy command</button>
-        <p class="note">Replace &lt;command&gt; with what to run, for example <code>uname -a</code>. Only the buyer's key works with this pass. When time is up the session is cut off and the files are wiped.</p>
+        <p class="note" id="useNote"></p>
       </div>
       <p class="warn" id="warn" role="status" hidden></p>
     </div>
@@ -570,7 +575,6 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
           <span class="pin__name" id="pinName"></span>
           <span class="pin__price"><b id="pinPrice"></b> per minute</span>
           <span class="status" id="pinStatus"></span>
-          <span class="pin__note" id="pinNote"></span>
           <code id="pinConn"></code>
         </div>
       </div>
@@ -620,8 +624,8 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
           <div class="sum__total"><span>Total</span><b><span id="sumTotal"></span><small>NEAR</small></b></div>
         </div>
         <div class="cmd" id="rentCmd"></div>
-        <button class="btn" id="copyRent" type="button">Copy the rent command</button>
-        <p class="note">Paying from the browser is not built yet. Run this in a terminal in the repo; this page follows the pass live.</p>
+        <button class="btn" id="copyRent" type="button">Copy rent command</button>
+        <p class="note">No wallet button yet. Run this in the repo and watch here.</p>
       </div>
       <dl class="pfacts" id="pfacts" hidden></dl>
     </div>
@@ -630,16 +634,16 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
 
 <section class="below" data-view="machines" id="machines-list">
   <div class="wrap">
-    <h2 class="h2">Machines you can rent right now<small>Read from the chain every 2 seconds. One renter at a time per machine; the light shows whether it is free. Pick one to put it on the desk above.</small></h2>
+    <h2 class="h2">Machines for rent<small>Live from the contract. One renter at a time.</small></h2>
     <ul class="shelf" id="shelf"></ul>
-    <p class="shelf__note" id="shelfNote">Reading machines from the chain.</p>
+    <p class="shelf__note" id="shelfNote">Reading the contract.</p>
     <details class="paused" id="pausedBox" hidden>
       <summary id="pausedSum">Show paused machines</summary>
       <ul class="shelf" id="shelfPaused"></ul>
     </details>
 
     <div class="passes" id="passes">
-      <h2 class="h2">Recent passes<small>Every pass the contract has written, newest first.</small></h2>
+      <h2 class="h2">Recent passes</h2>
       <div class="scrollx"><table>
         <thead><tr><th>Pass</th><th>Machine</th><th>Buyer</th><th>Time</th><th>Price</th><th>State</th></tr></thead>
         <tbody id="passRows"></tbody>
@@ -648,14 +652,14 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
     </div>
 
     <div class="trust">
-      <h2 class="h2">Why the lid opens only for the renter</h2>
-      <div><h3>Nobody holds the key</h3><p>Passes are signed by a network of independent computers, NEAR Chain Signatures. It signs only when the Gatepass contract asks, and the contract asks only after it has been paid.</p></div>
-      <div><h3>One machine, one renter</h3><p>Every machine has its own signing key, so a pass for one machine is useless on another. While a pass is live, nobody else can rent that machine.</p></div>
-      <div><h3>Nothing is left behind</h3><p>When the minutes end the session is cut off and the files are wiped. Renters cannot become admin, change the system or reach the owner's network.</p></div>
+      <h2 class="h2">Why it can be trusted</h2>
+      <div><h3>Nobody holds the key</h3><p>NEAR Chain Signatures signs a pass only after the contract has been paid.</p></div>
+      <div><h3>One machine, one renter</h3><p>Each machine has its own key, and one pass at a time.</p></div>
+      <div><h3>Nothing is left behind</h3><p>When time is up the session is cut off and the files are wiped.</p></div>
     </div>
     <details class="tech">
       <summary>How it works, technically</summary>
-      <p>A pass is a short-lived OpenSSH user certificate. The contract <code id="techContract">gatepass.testnet</code> records the payment, then asks NEAR Chain Signatures (an MPC network, <code id="techMpc">v1.signer-prod.testnet</code>) to sign the certificate with a key derived for that one machine. The machine's SSH server trusts only that key, and the certificate's validity window is exactly the minutes paid for. If signing fails, the contract refunds the payment.</p>
+      <p>A pass is a short-lived SSH certificate. Each machine has its own CA key, derived by NEAR Chain Signatures. The contract builds the certificate and requests the signature only after payment. A force-command on the machine ends the session when the time is up.</p>
     </details>
   </div>
 </section>
@@ -664,34 +668,31 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
 <section class="page" data-view="owners" hidden>
   <div class="wrap">
     <h1 class="h1">Lend out a computer you are not using</h1>
-    <p class="lede">List any computer you can leave switched on. Renters pay the contract, the contract pays you by the minute. You never hand anyone a password.</p>
+    <p class="lede">You set the price and withdraw what it earns.</p>
     <div class="two">
       <div>
-        <h2 class="h2" style="font-size:26px">How to do it</h2>
-        <div class="howto">
-          <div><h3>List a machine</h3><p>Run this on the computer you want to lend. It sets up the locked-down login and lists the machine on-chain. Listing costs <b id="ownFee">0.02</b> NEAR once.</p><div class="cmdl">scripts/host-up.sh &lt;id&gt; &lt;public-host&gt; &lt;price&gt; &lt;port&gt;</div></div>
-          <div><h3>Withdraw what it earned</h3><p>Earnings sit in the contract until you take them.</p><div class="cmdl">bin/gatepass withdraw &lt;machine&gt;</div></div>
+        <div class="howto" style="margin-top:0">
+          <div><h3>List a machine</h3><div class="cmdl">scripts/host-up.sh &lt;id&gt; &lt;public-host&gt; &lt;price&gt; &lt;port&gt;</div></div>
+          <div><h3>Withdraw what it earned</h3><div class="cmdl">bin/gatepass withdraw &lt;machine&gt;</div></div>
         </div>
         <div class="cannot">
-          <h2 class="h2" style="font-size:26px">What a renter cannot do on your machine</h2>
+          <h2 class="h2" style="font-size:26px">What renters cannot do</h2>
           <ul>
             <li>Become admin</li>
-            <li>Change the system: it is read-only</li>
-            <li>Use more CPU or memory than the limit</li>
+            <li>Change the system</li>
             <li>Reach the internet or your network</li>
-            <li>Stay past the minutes they paid for</li>
+            <li>Stay past their time</li>
             <li>Leave files behind</li>
           </ul>
         </div>
       </div>
       <div>
-        <h2 class="h2" style="font-size:26px">Every listed machine, from the chain</h2>
-        <div class="totals" style="margin-top:16px">
-          <div><b id="totEarned">0</b><span>NEAR earned by all machines</span></div>
+        <div class="totals">
+          <div><b id="totEarned">0</b><span>NEAR earned</span></div>
           <div><b id="totPasses">0</b><span>passes issued</span></div>
         </div>
         <div class="scrollx"><table>
-          <thead><tr><th>Machine</th><th>Owner</th><th>Price</th><th>Passes</th><th>Earned</th><th>Not yet withdrawn</th></tr></thead>
+          <thead><tr><th>Machine</th><th>Owner</th><th>Price</th><th>Passes</th><th>Earned</th><th>Not withdrawn</th></tr></thead>
           <tbody id="ownRows"></tbody>
         </table></div>
       </div>
@@ -704,34 +705,30 @@ body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
   <div class="wrap">
     <div class="two" style="margin-top:0">
       <div>
-        <h1 class="h1">An agent can open a machine by itself</h1>
-        <p class="lede">Give a software agent a wallet and a budget. It finds a machine, pays, runs its job and reports what it cost. Nobody creates an account for it.</p>
-        <div class="budget">
-          <h2 class="h2" style="font-size:22px">Budget in the example run</h2>
-          <div class="budget__bar" role="img" aria-label="0.02 of 0.1 NEAR spent"><i></i></div>
-          <div class="budget__row"><span><b>0.02 NEAR</b> spent</span><span>0.08 NEAR left of 0.1</span></div>
-        </div>
+        <h1 class="h1">Agents rent too</h1>
+        <p class="lede">An agent with a wallet and a budget rents a machine by itself.</p>
         <div class="howto" style="margin-top:30px;max-width:460px">
-          <div><h3>Run it yourself</h3><p>From the repo. The rental shows up live on the Machines page while it runs.</p><div class="cmdl">scripts/agent-demo.sh</div></div>
+          <div><h3>Run the example</h3><div class="cmdl">scripts/agent-demo.sh</div></div>
         </div>
       </div>
       <div class="run">
-        <div class="run__head"><span class="eg">Example of one real run, not live</span><span></span></div>
+        <div class="run__head"><span class="eg">Example run</span><span></span></div>
         <div class="run__task"><span>Task</span>How many prime numbers are there below 50000?</div>
         <ol class="log">
-          <li><span><b>Looked at 2 machines</b><small>Compared price and availability on the chain.</small></span></li>
-          <li><span><b>Rented the 0.01 NEAR per minute machine for 1 minute</b><small>0.01 NEAR for time plus the 0.01 NEAR storage fee. The pass was signed and the lid opened. <a href="https://testnet.nearblocks.io/txns/GfyJisovwTPXsJaVoegbSMjviojMZ6azbYTVTej4hrj9" target="_blank" rel="noopener noreferrer">See the transaction</a></small></span><span class="log__amt">0.02 NEAR</span></li>
-          <li><span><b>Logged in and ran a Python sieve</b><small>Counted the primes below 50000 on the rented machine.</small></span></li>
+          <li><span><b>Chose the cheaper of 2 machines</b></span></li>
+          <li><span><b>Rented 1 minute</b><small><a href="https://testnet.nearblocks.io/txns/GfyJisovwTPXsJaVoegbSMjviojMZ6azbYTVTej4hrj9" target="_blank" rel="noopener noreferrer">See the transaction</a></small></span><span class="log__amt">0.02 NEAR</span></li>
+          <li><span><b>Ran a Python script</b></span></li>
           <li><span><b>Answer</b><span class="answer" style="display:block;margin-top:6px">5133</span></span></li>
-          <li><span><b>Reported the cost</b><small>The model made 5 calls in total. The pass expired after its minute and the machine was free again.</small></span></li>
         </ol>
-        <div class="run__sum"><span>Spent, of a 0.1 NEAR budget</span><b>0.02 NEAR</b></div>
+        <div class="run__sum"><span>Spent, of 0.1 NEAR</span><b>0.02 NEAR</b></div>
       </div>
     </div>
   </div>
 </section>
 
 </main>
+
+<footer class="foot"><div class="wrap"><a id="contractLink" target="_blank" rel="noopener noreferrer">gatepass.testnet</a> on NEAR testnet. <a href="https://github.com/Sajjad21990/gatepass" target="_blank" rel="noopener noreferrer">Source on GitHub</a></div></footer>
 
 <div class="toast" id="toast" role="status"></div>
 
@@ -923,9 +920,6 @@ function onData() {
 /* ---------- static bits from config ---------- */
 function renderStatic() {
   const c = st.config || {};
-  $('techContract').textContent = cfg.contract; $('pgContract').textContent = cfg.contract;
-  if (c.mpc_contract) $('techMpc').textContent = String(c.mpc_contract);
-  if (c.machine_storage_fee) $('ownFee').textContent = near(c.machine_storage_fee);
 }
 
 /* ---------- shelf ---------- */
@@ -934,14 +928,14 @@ function bay(m) {
   li.dataset.id = m.id;
   const d = el('div', 'bay__dev'); d.setAttribute('aria-hidden', 'true'); d.innerHTML = ICONS[kindOf(m.id)] || ICONS.laptop; // fixed local drawings, no chain data
   const name = el('h3', 'bay__name', m.id);
-  const conn = el('p', 'bay__conn'); conn.append('Connects to ', el('code', '', `${m.login_user}@${m.host}:${m.port}`));
+  const conn = el('p', 'bay__conn'); conn.append(el('code', '', `${m.login_user}@${m.host}:${m.port}`));
   const row = el('div', 'bay__row');
   const price = el('div', 'bay__price'); price.append(el('b', '', near(m.price_per_minute) + ' NEAR'), ' ', el('span', '', 'per minute'));
-  const owner = el('span', 'bay__owner'); owner.append('Lent by ', acct(m.owner)); price.append(owner);
+  const owner = el('span', 'bay__owner'); owner.append('by ', acct(m.owner)); price.append(owner);
   const status = el('div', 'status');
   row.append(price, status);
-  const key = el('p', 'bay__key', m.host_key ? 'Host key published on-chain, so a terminal can check it reached the right machine.' : 'Host key not published yet.');
-  const btn = el('button', 'btn btn--small btn--quiet', 'Put it on the desk'); btn.type = 'button';
+  const key = el('p', 'bay__key'); key.append(el('span', 'pill', m.host_key ? 'Host key on-chain' : 'Host key not published'));
+  const btn = el('button', 'btn btn--small btn--quiet', 'Select'); btn.type = 'button';
   li.append(d, name, conn, row, key, btn);
   li.addEventListener('click', (e) => { if (e.target.closest('a')) return; select(m.id); });
   st.bays.push({ m, li, status, btn });
@@ -958,18 +952,18 @@ function renderShelf() {
   $('pausedSum').textContent = `Show paused machines (${off.length})`;
   const note = $('shelfNote');
   show(note, on.length === 0);
-  note.textContent = st.machines.length === 0 ? 'No machines are listed yet. An owner lists one with scripts/host-up.sh and it appears here.' : 'Every listed machine is paused by its owner right now.';
+  note.textContent = st.machines.length === 0 ? 'No machines listed yet.' : 'Every machine is paused right now.';
 }
 function tickShelf(now) {
   for (const b of st.bays) {
     const av = machineAvailability(b.m, now);
-    const text = av.kind === 'paused' ? 'Paused by its owner' : av.kind === 'busy' ? 'In use, free in ' + formatCountdown(av.secondsLeft) : 'Free now';
+    const text = av.kind === 'paused' ? 'Paused' : av.kind === 'busy' ? 'In use, free in ' + formatCountdown(av.secondsLeft) : 'Free now';
     if (b.status.textContent !== text) b.status.textContent = text;
     b.status.className = 'status' + (av.kind === 'busy' ? ' status--busy' : av.kind === 'paused' ? ' status--off' : '');
     b.li.dataset.av = av.kind;
     const sel = b.m.id === st.sel;
     b.li.classList.toggle('is-on', sel);
-    const label = sel ? 'On the desk' : 'Put it on the desk';
+    const label = sel ? 'Selected' : 'Select';
     if (b.btn.textContent !== label) b.btn.textContent = label;
     b.btn.disabled = sel;
   }
@@ -996,7 +990,7 @@ function renderPasses() {
     st.rows.push({ p, pill });
     return tr;
   }));
-  if (list.length === 0) { const tr = el('tr'); const td = el('td', '', 'No passes yet. The first rental will show up here within 2 seconds.'); td.colSpan = 6; tr.append(td); body.append(tr); }
+  if (list.length === 0) { const tr = el('tr'); const td = el('td', '', 'No passes yet.'); td.colSpan = 6; tr.append(td); body.append(tr); }
   const total = Number(st.config?.pass_count) || st.passes.length;
   $('passMore').textContent = total > list.length ? `Showing the latest ${list.length} of ${total} passes.` : '';
 }
@@ -1048,11 +1042,10 @@ const C = 2 * Math.PI * 124;
 const dial = $('dial');
 function renderDial(h, now) {
   let m = 0, num = '0', unit = 'minutes', cap = '', pips = false;
-  if (h.kind === 'active') { const left = Math.max(0, Math.ceil((h.end - now) / 1000)); m = left / 60; num = formatCountdown(left); unit = 'left'; cap = `Running down. It stops at ${fullClock(h.end)} and cannot be wound back up.`; }
+  if (h.kind === 'active') { const left = Math.max(0, Math.ceil((h.end - now) / 1000)); m = left / 60; num = formatCountdown(left); unit = 'left'; cap = `Stops at ${fullClock(h.end)}.`; }
   else if (h.kind === 'ended') { num = '0:00'; unit = 'left'; cap = `Ran out at ${fullClock(h.end)}.`; }
-  else if (h.kind === 'signing') { m = Number(h.pass.minutes) || 0; num = String(m); unit = m === 1 ? 'minute' : 'minutes'; pips = true; cap = `${minsText(m)}, wound and locked. It starts when the pass is signed.`; }
-  else if (h.kind === 'free') { m = st.minutes; num = String(m); unit = m === 1 ? 'minute' : 'minutes'; pips = true; }
-  else if (h.kind === 'paused') cap = 'Paused by its owner. The dial is locked.';
+  else if (h.kind === 'signing') { m = Number(h.pass.minutes) || 0; num = String(m); unit = m === 1 ? 'minute' : 'minutes'; pips = true; cap = `${minsText(m)}. Starts when signed.`; }
+  else if (h.kind === 'free') { m = st.minutes; num = String(m); unit = m === 1 ? 'minute' : 'minutes'; pips = true; cap = `1 to ${maxMinutes()} minutes`; }
   const hours = Math.floor(m / 60 + 1e-9), inHour = m - hours * 60, frac = (hours > 0 && inHour < 1e-9) ? 1 : inHour / 60;
   $('hand').style.transform = `rotate(${m * 6}deg)`;
   $('arc').style.strokeDashoffset = (C * (1 - frac)).toFixed(1);
@@ -1095,7 +1088,7 @@ dial.addEventListener('keydown', (e) => {
 $('minus').addEventListener('click', () => setMinutes(st.minutes - 1));
 $('plus').addEventListener('click', () => setMinutes(st.minutes + 1));
 $('ctl').addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (b) setMinutes(Number(b.dataset.m)); });
-$('copyRent').addEventListener('click', () => copy($('rentCmd').textContent, $('copyRent'), 'Copy the rent command'));
+$('copyRent').addEventListener('click', () => copy($('rentCmd').textContent, $('copyRent'), 'Copy rent command'));
 $('copySsh').addEventListener('click', () => copy($('sshCmd').textContent, $('copySsh'), 'Copy command'));
 
 /* ---------- the hero ---------- */
@@ -1129,7 +1122,6 @@ function applyHero(m, h, now) {
   }
   const useAlt = alt && !!altdev.firstElementChild;
   show(altdev, useAlt); $('lt').classList.toggle('is-off', useAlt); rig.classList.toggle('is-alt', useAlt);
-  $('step3').textContent = useAlt ? 'Run it in a terminal: the machine wakes in about 7 seconds' : 'Run it in a terminal: the lid opens in about 7 seconds';
   st.alt = useAlt;
 
   /* the note pinned over the shut lid */
@@ -1140,16 +1132,16 @@ function applyHero(m, h, now) {
     $('pinPrice').textContent = near(m.price_per_minute) + ' NEAR';
     $('pinConn').textContent = `${m.login_user}@${m.host}:${m.port}`;
     const ps = $('pinStatus');
-    ps.textContent = k === 'paused' ? 'Paused by its owner' : k === 'ended' ? 'Session ended, light off' : 'Free now';
+    ps.textContent = k === 'paused' ? 'Paused' : k === 'ended' ? 'Session ended' : 'Free now';
+    const pc = $('pinConn'); pc.hidden = false; pc.hidden = pc.scrollWidth > pc.clientWidth + 1;
     ps.className = 'status' + (k === 'free' ? '' : ' status--off');
-    $('pinNote').textContent = k === 'ended' ? (useAlt ? 'Light off. The old pass cannot open it.' : 'Shut again. The old pass cannot open it.') : k === 'paused' ? 'It cannot be rented until its owner resumes it.' : useAlt ? 'Asleep. It wakes only for a pass the network has signed.' : 'The lid is shut. It opens only for a pass the network has signed.';
   }
   rig.setAttribute('aria-label', m ? `${id}: ${k === 'active' ? 'lid open, in use' : k === 'signing' ? 'lid opening, pass being signed' : k === 'ended' ? 'lid shut, session ended' : k === 'paused' ? 'lid shut, paused' : 'lid shut, free to rent'}` : 'No machine selected');
 
   const facts = [];
   if (k === 'free') {
-    setH1(null, 'Rent a computer by the minute.');
-    lede.textContent = (useAlt ? 'Pay for the minutes you need and the machine wakes' : 'Pay for the minutes you need and the lid opens') + ': a signed pass logs the renter in to that one machine. When time is up it shuts by itself. No sign-up, no shared passwords.';
+    setH1(null, useAlt ? 'This computer wakes when you pay.' : 'This computer opens when you pay.');
+    lede.textContent = 'Rent it by the minute. When your time is up, it locks itself. No account, no password, and nobody holds the key.';
     lidTo(0, false, '', 'free');
     const price = parseYocto(m.price_per_minute) ?? 0n, fee = feeYocto(), time = price * BigInt(st.minutes);
     $('sumCalc').textContent = `${near(price)} NEAR × ${minsText(st.minutes)}`;
@@ -1159,40 +1151,40 @@ function applyHero(m, h, now) {
     $('rentCmd').textContent = `bin/gatepass rent ${m.id} --minutes ${st.minutes}`;
     document.querySelectorAll('#ctl [data-m]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.m) === st.minutes)));
   } else if (k === 'signing') {
-    setH1(id, useAlt ? 'is being unlocked' : 'is being opened');
-    lede.replaceChildren(`Pass #${p.serial} for `, acct(p.buyer), `, ${minsText(p.minutes)}. This takes about 7 seconds.`);
-    $('pgMinutes').textContent = minsText(p.minutes);
+    setH1(id, useAlt ? 'is waking' : 'is opening');
+    lede.replaceChildren(`Pass #${p.serial} for `, acct(p.buyer), '. About 7 seconds.');
     $('bootLine').textContent = `Signing pass #${p.serial}`;
     facts.push(fact('Pass', '#' + p.serial), fact('Buyer', acct(p.buyer)), fact('Time', minsText(p.minutes)));
   } else if (k === 'active') {
     setH1(id, `is in use until ${shortClock(h.end)}`);
-    if (p) lede.replaceChildren(`Pass #${p.serial}, bought by `, acct(p.buyer), '. Nobody else can rent this machine until the time is up.');
-    else lede.textContent = 'A pass is live on this machine. Nobody else can rent it until the time is up.';
+    if (p) lede.replaceChildren(`Pass #${p.serial}, bought by `, acct(p.buyer), '. Nobody else can rent it until then.');
+    else lede.textContent = 'A pass is live. Nobody else can rent it until then.';
+    $('useNote').textContent = `Only the buyer's key works. At ${fullClock(h.end)} the session is cut off and the files are wiped.`;
     lidTo(104, true, 'live', 'busy');
     $('scrTop').textContent = `${id} is in use until ${shortClock(h.end)}`;
     $('scrBot').textContent = p ? `Pass #${p.serial} for ${p.buyer}` : 'A pass is live';
     show($('barWrap'), !!p);
     if (p) {
       $('sshCmd').textContent = `bin/gatepass ssh ${p.serial} -- <command>`;
-      facts.push(fact('Pass', '#' + p.serial), fact('Valid until', fullClock(h.end)), fact('Time paid for', minsText(p.minutes)),
-        fact('Price paid', `${near(p.paid)} NEAR + ${near(feeYocto())} storage fee`), fact('Buyer', acct(p.buyer)), fact('Contract', acct(cfg.contract)));
+      facts.push(fact('Pass', '#' + p.serial), fact('Valid until', fullClock(h.end)), fact('Time', minsText(p.minutes)),
+        fact('Paid', `${near(p.paid)} NEAR + ${near(feeYocto())} storage fee`), fact('Buyer', acct(p.buyer)), fact('Contract', acct(cfg.contract)));
     }
   } else if (k === 'ended') {
-    setH1(id, useAlt ? 'is free again' : 'has shut');
+    setH1(id, 'is shut again');
     lede.textContent = `Session ended at ${fullClock(h.end)}. Files wiped. Free for the next renter.`;
     lidTo(0, false, '', '');
-    if (p) facts.push(fact('Pass', '#' + p.serial + ', expired'), fact('Buyer', acct(p.buyer)), fact('Price paid', `${near(p.paid)} NEAR + ${near(feeYocto())} storage fee`));
+    if (p) facts.push(fact('Pass', '#' + p.serial + ', expired'), fact('Buyer', acct(p.buyer)), fact('Paid', `${near(p.paid)} NEAR + ${near(feeYocto())} storage fee`));
   } else if (k === 'paused') {
     setH1(id, 'is paused');
-    lede.textContent = 'Its owner has paused renting. Pick another machine below.';
+    lede.textContent = 'Its owner has stopped renting it out for now.';
     lidTo(0, false, '', '');
   } else if (k === 'empty') {
-    setH1(null, 'No machines are listed yet.');
-    lede.textContent = `Nothing is listed on ${cfg.contract}. An owner lists a machine with scripts/host-up.sh and it appears here.`;
+    setH1(null, 'No machines listed yet.');
+    lede.textContent = 'List one with scripts/host-up.sh.';
     lidTo(0, false, '', '');
   } else {
-    setH1(null, 'Rent a computer by the minute.');
-    lede.textContent = st.error ? `The chain is not answering yet. Retrying every 2 seconds.` : `Reading machines from ${cfg.contract}.`;
+    setH1(null, 'This computer opens when you pay.');
+    lede.textContent = st.error ? 'The chain is not answering. Retrying.' : 'Reading the contract.';
     lidTo(0, false, '', '');
   }
   $('pfacts').replaceChildren(...facts);
@@ -1217,7 +1209,7 @@ function tickHero(now) {
     const last = left < 60;
     rig.classList.toggle('is-last', last);
     show($('warn'), last);
-    if (last) $('warn').textContent = `Less than a minute left. The session is cut off and the files are wiped at ${fullClock(h.end)}.`;
+    if (last) $('warn').textContent = 'Under a minute left.';
   } else { rig.classList.remove('is-last'); show($('warn'), false); }
   show($('bigCount'), h.kind === 'active' && !!st.alt);
   renderDial(h, now);
@@ -1261,7 +1253,7 @@ if (PREVIEW) {
 } else { document.body.style.paddingBottom = '0'; }
 
 try { if (dev && typeof dev.logoMarkup === 'string' && dev.logoMarkup.includes('<svg')) $('brandMark').innerHTML = dev.logoMarkup; } catch { /* keep the built-in mark */ }
-const cl = $('contractLink'); cl.textContent = cfg.contract + ' on NEAR testnet'; cl.href = cfg.explorer + '/address/' + encodeURIComponent(cfg.contract);
+const cl = $('contractLink'); cl.textContent = cfg.contract; cl.href = cfg.explorer + '/address/' + encodeURIComponent(cfg.contract);
 route(); tick(); refresh(); setInterval(tick, TICK_MS);
 </script>
 </body>
