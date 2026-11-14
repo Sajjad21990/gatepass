@@ -1,7 +1,7 @@
 # Gatepass
 
 **Pay, and get a pass that lets you into a machine for exactly the minutes you paid for.**
-No accounts, no shared passwords, and no person holds the signing key.
+No sign-up with the machine's owner, no shared passwords, and no person holds the signing key.
 
 Built at NEAR Hackathon. Runs on NEAR testnet.
 
@@ -98,12 +98,13 @@ deployed on testnet at `gatepass.testnet`.
    | 4 | The pass logs in and runs a command | `(host key pinned from the contract)`, `gatepass: session ends in 5Xs` and `hello from renter@<container id>` |
    | 5 | A long job is started and cut off when the minute is up | a `job running, Ns` line every 5 seconds, then `gatepass: time is up, session closed` and `session exit code: 124` |
    | 6 | The same pass is tried again | `Permission denied (publickey).` then `refused, as expected` |
-   | 7 | The pass is listed from the chain and the owner withdraws | `withdrew 0.01 NEAR from demo-xxxxxxxx to <your account>` and an explorer link |
+   | 7 | The pass is listed from the chain and the owner withdraws | `withdrew 0.0N NEAR from demo-xxxxxxxx to <your account>` (0.01 on a first run) and an explorer link |
 
    The script ends with `Demo complete.` and exit code 0.
 
    A machine has one renter at a time, so if you run the demo again within a
-   minute it first prints `... is in use for N more seconds; waiting ...`.
+   minute it first prints
+   `demo-xxxxxxxx is in use for N more seconds (one renter at a time); waiting ...`.
 
 4. Watch it in the web page while the demo runs. Start this first, in a
    second terminal:
@@ -118,9 +119,9 @@ deployed on testnet at `gatepass.testnet`.
    | When | What the page shows |
    | --- | --- |
    | The machine is free | A laptop with its lid shut and a breathing green light, a timer dial to set minutes, the price, and the exact `bin/gatepass rent ...` command to copy |
-   | The demo pays (step 3) | "is being opened": the lid lifts in stages while three lines say what the contract and NEAR Chain Signatures are doing |
+   | The demo pays (step 3) | "demo-xxxxxxxx is opening": the lid lifts in stages while three lines say what the contract and NEAR Chain Signatures are doing |
    | The pass is live (steps 4 and 5) | The lid is open and the screen counts down to the paid deadline; the dial runs down with it |
-   | Time is up (step 6) | "has shut": the lid closes, the light goes off, "Files wiped. Free for the next renter." |
+   | Time is up (step 6) | "demo-xxxxxxxx is shut again": the lid closes, the light goes off, "Files wiped. Free for the next renter." |
 
    Machines whose name contains `gpu` (or ends in `-big`) are drawn as a GPU
    tower whose fans spin while rented, and names containing `arm`, `pi` or
@@ -191,7 +192,9 @@ chat API with tool calling works):
   so the cost of a run can be worked out for any provider.
 - **Not tested:** the NEAR AI Cloud default. The request format follows its
   documentation, but no API key was available while building this.
-- **No key:** the script falls back to a fixed rule (cheapest free machine, one
+- **No key (what you see with a fresh `.env`):** the run ends with
+  `Ran on demo-xxxxxxxx for 1 minute (exit code 0):` and `5133 primes below 50000`,
+  with no `model:` line. The script falls back to a fixed rule (cheapest free machine, one
   minute, one preset command) and says so in its output. That reproduces the
   payment and login flow, but no model is deciding anything.
 
@@ -374,7 +377,7 @@ directions. Everything in this section is implemented in `host/` and
 | Only paying renters get in | sshd accepts nothing but certificates signed by this machine's own CA key. No passwords, no `authorized_keys`. A certificate without a deadline is refused. |
 | Nobody gets in as root | The renter is an unprivileged user with zero Linux capabilities. `no-new-privileges` is set and the image has no setuid programs. |
 | The system cannot be changed | The root filesystem is read-only. The only writable places are size-capped, non-executable scratch areas (64 MB home, 32 MB `/tmp`). |
-| The machine cannot be taken down | Limits of 1 CPU, 256 MB memory and 128 processes per renter. A fork bomb and a memory hog were both tested: sshd stayed up and the next login worked. |
+| The machine cannot be taken down | Limits of 1 CPU, 256 MB memory and 128 processes per session. A fork bomb and a memory hog were both tested: sshd stayed up and the next login worked. |
 | Nobody overstays | The session is cut at the paid deadline, and a root-owned reaper enforces it even if the renter freezes the in-session timer. |
 | No network abuse from the owner's address | The machine has no outbound network at all: no internet, no DNS, no access to the owner's computer, LAN or other machines. It sits on an internal Docker network behind a small forwarder that only passes SSH in. Port, agent and X11 forwarding and tunnels are disabled too. |
 | Nothing is left behind | When a pass ends, every process is killed and every file the renter wrote is erased before the next renter can log in. |
@@ -487,6 +490,8 @@ What can still get around it:
 | `agent/` | `agent.ts`: an agent with a wallet and a budget that rents machines by itself. |
 | `host/` | The demo host (two sandboxed machines in `docker-compose.yml`, each behind a `host/gate` forwarder): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals`, `gatepass-reaper` and `gatepass-wipe`. |
 | `dashboard/` | The web page: a live view of the contract where the rented machine opens and shuts with its pass. `index.html` is the page, `devices.js` and `devices.css` draw the GPU tower and the small board, `board.html` is the earlier table view. No wallet needed. |
+| `bin/gatepass` | The launcher every CLI command in this README uses. |
+| `docker-compose.yml` | The two sandboxed demo machines and their forwarders, with the resource limits. |
 | `scripts/` | `demo.sh`, `agent-demo.sh`, `host-up.sh` (list a real machine), `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
 
 ## Built with
