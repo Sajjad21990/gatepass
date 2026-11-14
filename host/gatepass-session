@@ -10,8 +10,9 @@
 # the client's command ($SSH_ORIGINAL_COMMAND) or a login shell, and at the
 # deadline kills it together with everything else the session started.
 #
-# It runs as the login user, not as root. See "limits" in the README: the
-# user can signal this script like any other process of their own.
+# It runs as the login user, not as root, so the user can stop or kill it like
+# any other process of their own. gatepass-reaper (root) is the backstop: it
+# kills the whole connection a few seconds after the deadline regardless.
 #
 # Exit status: the command's own status if it finished in time, 124 if the
 # deadline cut it off (or had already passed), 2 on a malformed argument.
@@ -177,7 +178,15 @@ watchdog() {
     read -r w_self w_rest < /proc/self/stat
     while now=$(date +%s) && [ "$now" -lt "$deadline" ]; do
         w_left=$((deadline - now))
-        if [ "$w_left" -gt 1 ]; then sleep $((w_left - 1)); else sleep 0.1; fi
+        # Short naps, re-reading the wall clock each time: a sleep does not
+        # count time the machine spent suspended, and the clock can be stepped.
+        if [ "$w_left" -gt 5 ]; then
+            sleep 5
+        elif [ "$w_left" -gt 1 ]; then
+            sleep $((w_left - 1))
+        else
+            sleep 0.1
+        fi
     done
     kill -USR1 $$ 2>/dev/null
     time_is_up

@@ -46,3 +46,13 @@ PermitUserEnvironment no
 # A connection with no session open (ssh -N) runs no wrapper, so nothing would
 # ever close it. sshd drops it after this many seconds without a channel.
 UnusedConnectionTimeout 30
+
+# --- Root-side deadline record (see gatepass-principals, gatepass-reaper) ---
+# The wrapper runs as renter, so renter can stop or kill it. sshd therefore
+# runs this command as root while it checks the certificate, before renter owns
+# any process: it records the deadline from the certificate's force-command for
+# this connection, and gatepass-reaper (root) kills the connection once that
+# has passed. It prints the login name, so the certificate must still list
+# "renter" as a principal, exactly as without this command.
+AuthorizedPrincipalsCommand /usr/local/bin/gatepass-principals %u %t %k
+AuthorizedPrincipalsCommandUser root

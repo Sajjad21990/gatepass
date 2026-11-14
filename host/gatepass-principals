@@ -1,0 +1,53 @@
+#!/bin/sh
+# gatepass-principals %u %t %k
+#
+# sshd's AuthorizedPrincipalsCommand. sshd's root monitor process runs this, as
+# root, while it checks a certificate that the trusted CA has signed, i.e.
+# before the login user owns a single process. It does two things:
+#
+#   1. prints the login name, so the certificate must list it as a principal
+#      (the same rule sshd applies when no principals command is set);
+#   2. reads the deadline out of the certificate's force-command and records
+#      it for this connection, where only root can write:
+#          /run/gatepass/conn/<pid of sshd's monitor>   "<start time> <deadline>"
+#      gatepass-reaper enforces that record.
+#
+# sshd calls this again for every certificate the client offers, the last time
+# for the one whose signature it then verifies, so the record always ends up
+# describing the certificate that actually logged in.
+#
+# A certificate without a gatepass-session force-command gets no record and is
+# therefore not time-limited by the reaper (the CA decides what it signs).
+# If a deadline is present but cannot be recorded, the login is refused.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset IFS ENV
+umask 077
+
+[ $# -eq 3 ] || exit 1
+user=$1 type=$2 blob=$3
+dir=/run/gatepass
+mon=$PPID
+
+stat=$(tr '\n' ' ' < "/proc/$mon/stat") || exit 1
+set -- ${stat##*) }
+[ $# -ge 20 ] || exit 1
+start=${20}
+
+tmp=$dir/cert.$$
+printf '%s %s\n' "$type" "$blob" > "$tmp" || exit 1
+deadline=$(ssh-keygen -L -f "$tmp" 2>/dev/null |
+    sed -n 's|^ *force-command /usr/local/bin/gatepass-session \([0-9]\{1,12\}\) *$|\1|p' |
+    head -n 1)
+rm -f "$tmp"
+
+record=$dir/conn/$mon
+if [ -n "$deadline" ]; then
+    printf '%s %s\n' "$start" "$deadline" > "$record.new" || exit 1
+    mv -f "$record.new" "$record" || exit 1
+else
+    rm -f "$record"
+fi
+
+printf '%s\n' "$user"

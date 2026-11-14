@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deploy (or upgrade) the Gatepass contract on testnet and set its CA key.
+// Deploy (or upgrade) the Gatepass contract on testnet.
 //
 //   cd contract && cargo near build non-reproducible-wasm && cd ..
 //   node scripts/deploy.ts
@@ -10,10 +10,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, TGAS, call, explain, settings, signer, toYocto } from '../cli/near.ts';
+import { ROOT, call, explain, settings, signer, toYocto } from '../cli/near.ts';
 
 const WASM = path.join(ROOT, 'contract', 'target', 'near', 'gatepass.wasm');
-const INITIAL_BALANCE = '4.5'; // NEAR; covers storage for the code and state
+const INITIAL_BALANCE = process.env.GATEPASS_INITIAL_BALANCE || '3.5'; // NEAR; covers storage for the code and state
 
 async function main() {
   const s = settings();
@@ -42,10 +42,8 @@ async function main() {
     console.log(`  init tx:   ${init.explorerUrl}`);
   }
 
-  const ca = await call<string>(parent, target, 'refresh_ca_key', {}, { gas: 50n * TGAS });
-  console.log(`  CA key tx: ${ca.explorerUrl}`);
-  console.log(`\ncontract:      ${target}`);
-  console.log(`CA public key: ${ca.value}`);
+  console.log(`\ncontract: ${target}`);
+  console.log('next: bin/gatepass register <id> --host H --port P --user U --price <NEAR per minute>');
 
   const envFile = path.join(ROOT, '.env');
   const env = fs.readFileSync(envFile, 'utf8');

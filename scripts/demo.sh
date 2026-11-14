@@ -12,7 +12,7 @@
 # is the machine owner; otherwise one account plays both parts.
 #
 # What it shows, in order:
-#   1. the host trusts only the contract's CA key (held by nobody)
+#   1. the host trusts only its machine's CA key (held by nobody)
 #   2. paying for 1 minute returns a pass signed by NEAR Chain Signatures
 #   3. the pass logs in and runs a command
 #   4. a long-running session is cut off when the paid minute is up
@@ -30,16 +30,16 @@ as_renter() { if [ -f .env.renter ]; then GATEPASS_ENV_FILE=.env.renter "$@"; el
 OWNER=$(sed -n 's/^NEAR_ACCOUNT_ID=//p' .env)
 MACHINE=${1:-demo-$(node -e 'console.log(require("crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,8))' "$OWNER")}
 
-step "1. Start the demo host and give it the contract's CA key"
-docker compose up -d --build --quiet-pull >/dev/null 2>&1 || docker compose up -d --build
-$GP host-setup --write host/ca/gatepass_ca.pub
-ssh-keygen -l -f host/ca/gatepass_ca.pub
-
-step "2. Machines for rent"
+step "1. Machines for rent"
 if [ "$($GP machines --json | json "v.some(m=>m.id==='$MACHINE')")" != "true" ]; then
   $GP register "$MACHINE" --host 127.0.0.1 --port 2222 --user renter --price 0.01
 fi
 $GP machines
+
+step "2. Start the demo host and give it the CA key of $MACHINE"
+docker compose up -d --build --quiet-pull >/dev/null 2>&1 || docker compose up -d --build
+$GP host-setup "$MACHINE" --write host/ca/gatepass_ca.pub
+ssh-keygen -l -f host/ca/gatepass_ca.pub
 
 step "3. Pay for 1 minute on $MACHINE and get a pass"
 SERIAL=$(as_renter $GP rent "$MACHINE" --minutes 1 --no-ssh --json | json 'v.serial')

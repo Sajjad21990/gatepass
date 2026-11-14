@@ -1,0 +1,131 @@
+#!/bin/sh
+# gatepass-reaper: root-side enforcement of session deadlines.
+#
+# gatepass-session (the certificate's force-command) ends a session on time,
+# but it runs as the login user, who can stop or kill it. This loop runs as
+# root next to sshd and does not depend on anything the user controls:
+#
+#   - The deadline of each connection comes from /run/gatepass/conn/<pid>,
+#     written by gatepass-principals (root, inside sshd, at login) from the
+#     certificate itself. <pid> is sshd's root-owned monitor process for that
+#     connection ("sshd-session: renter [priv]").
+#   - Which processes belong to a connection comes from the kernel: parent
+#     links up to that monitor, and session ids. Nothing is read from a user
+#     process's argv or environment.
+#
+# Every second:
+#   1. A connection that is GRACE seconds past its deadline is killed outright:
+#      its monitor, its sshd user process and every process of the login user
+#      under it (SIGKILL). The grace lets the wrapper say goodbye first.
+#   2. A process of the login user that belongs to no open connection (it left
+#      its session with setsid and its parent is gone, or its connection has
+#      closed) is killed at once. Nothing outlives its connection.
+#
+# The wall clock is read on every pass, so a suspended laptop or a clock step
+# is picked up within a second.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset IFS ENV
+
+DIR=/run/gatepass/conn
+LOGIN=${GATEPASS_USER:-renter}
+GRACE=${GATEPASS_REAPER_GRACE:-3}
+
+log() { echo "gatepass-reaper: $*" >&2; }
+
+RUID=$(id -u "$LOGIN") || { log "no such user: $LOGIN"; exit 1; }
+log "enforcing deadlines for $LOGIN (uid $RUID), ${GRACE}s after each deadline"
+
+# scan NOW: prints "gone <monitor>", "expire <monitor> <deadline> <pids...>"
+# and "orphan <pids...>" lines.
+scan() {
+    {
+        for f in "$DIR"/[0-9]*; do
+            case ${f##*/} in *[!0-9]*) continue ;; esac
+            if read -r r_start r_deadline < "$f"; then
+                echo "D ${f##*/} $r_start $r_deadline"
+            fi
+        done 2>/dev/null
+        for p in /proc/[0-9]*; do echo "P ${p#/proc/}"; done
+    } | awk -v now="$1" -v grace="$GRACE" -v ruid="$RUID" '
+    function readproc(pid,    f, s, l, n, a, b, open) {
+        f = "/proc/" pid "/stat"; s = ""
+        while ((getline l < f) > 0) s = s l " "
+        close(f)
+        if (s == "" || !match(s, /.*\) /)) return
+        open = index(s, "(")
+        n = split(substr(s, RLENGTH + 1), a, " ")
+        if (n < 20) return
+        f = "/proc/" pid "/status"; b[2] = ""
+        while ((getline l < f) > 0) if (l ~ /^Uid:/) { split(l, b, " "); break }
+        close(f)
+        if (b[2] == "") return
+        comm[pid] = substr(s, open + 1, RLENGTH - open - 2)
+        state[pid] = a[1]; ppid[pid] = a[2]; sid[pid] = a[4]; start[pid] = a[20]
+        uid[pid] = b[2]
+        seen[pid] = 1
+    }
+    # Where a process comes from: the pid of the sshd monitor it descends
+    # from, "exec" (docker exec, not ssh) or "orphan".
+    function origin(pid,    p, depth, o) {
+        if (pid in org) return org[pid]
+        p = pid; o = "orphan"
+        for (depth = 0; depth < 200; depth++) {
+            if (!(p in seen) || p == 1) break
+            if (uid[p] == 0 && comm[p] ~ /^sshd/) { o = p; break }
+            if (ppid[p] == 0) { o = "exec"; break }
+            p = ppid[p]
+        }
+        org[pid] = o
+        return o
+    }
+    $1 == "D" && $2 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ { dstart[$2] = $3; dl[$2] = $4 }
+    $1 == "P" { readproc($2) }
+    END {
+        for (m in dl) {
+            if (!(m in seen) || uid[m] != 0 || start[m] != dstart[m]) print "gone " m
+            else if (now + 0 >= dl[m] + grace) expired[m] = 1
+        }
+        # Live session leaders that still hang under a connection.
+        for (p in seen)
+            if (sid[p] == p && state[p] != "Z" && origin(p) != "orphan")
+                leader[p] = origin(p)
+        for (p in seen) {
+            if (uid[p] != ruid || state[p] == "Z") continue
+            o = origin(p)
+            if (o == "orphan" && (sid[p] in leader)) o = leader[sid[p]]
+            if (o == "exec") continue
+            if (o == "orphan") orphans = orphans " " p
+            else if (o in expired) victims[o] = victims[o] " " p
+        }
+        for (m in expired) print "expire " m " " dl[m] " " m victims[m]
+        if (orphans != "") print "orphan" orphans
+    }'
+}
+
+while :; do
+    now=$(date +%s)
+    scan "$now" | while read -r verb rest; do
+        case $verb in
+            gone)
+                case $rest in
+                    '' | *[!0-9]*) ;;
+                    *) rm -f "${DIR:?}/${rest:?}" ;;
+                esac
+                ;;
+            expire)
+                set -- $rest
+                mon=$1 deadline=$2
+                shift 2
+                kill -KILL "$@" 2>/dev/null
+                log "connection $mon is $((now - deadline))s past its deadline ($deadline): killed $*"
+                ;;
+            orphan)
+                kill -KILL $rest 2>/dev/null
+                log "killed $LOGIN processes outside any open connection:$rest"
+                ;;
+        esac
+    done
+    sleep 1
+done

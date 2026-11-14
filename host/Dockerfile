@@ -16,7 +16,16 @@ COPY sshd_config /etc/ssh/sshd_config
 # Root-owned and not writable by renter, so a session cannot replace it.
 COPY --chown=root:root --chmod=0755 gatepass-session /usr/local/bin/gatepass-session
 
+# Root-side backstop for the wrapper (the user can stop or kill the wrapper):
+#   gatepass-principals  run by sshd as root at login; records the deadline
+#                        found in the certificate (see sshd_config)
+#   gatepass-reaper      root loop that kills a connection past its deadline
+COPY --chown=root:root --chmod=0755 gatepass-principals /usr/local/bin/gatepass-principals
+COPY --chown=root:root --chmod=0755 gatepass-reaper /usr/local/bin/gatepass-reaper
+COPY --chown=root:root --chmod=0755 entrypoint.sh /usr/local/bin/gatepass-entrypoint
+
 EXPOSE 22
 
-# -D: stay in the foreground, -e: log to stderr (=> `docker compose logs host`).
-CMD ["/usr/sbin/sshd", "-D", "-e"]
+# Starts gatepass-reaper, then execs `sshd -D -e`: sshd is pid 1, in the
+# foreground, logging to stderr (=> `docker compose logs host`).
+CMD ["/usr/local/bin/gatepass-entrypoint"]

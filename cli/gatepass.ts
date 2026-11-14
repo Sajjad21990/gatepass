@@ -5,7 +5,7 @@
 //   gatepass rent <machine> --minutes N [--no-ssh] [-- command ...]
 //   gatepass ssh <serial> [-- command ...]
 //   gatepass passes [machine]
-//   gatepass host-setup [--write <file>]
+//   gatepass host-setup <machine> [--write <file>]
 //   gatepass register <id> --host H --port P --user U --price <NEAR per minute>
 //   gatepass withdraw <machine>
 
@@ -20,6 +20,7 @@ const PASS_DIR = process.env.GATEPASS_HOME || path.join(ROOT, 'passes');
 interface Machine {
   id: string; owner: string; host: string; port: number; login_user: string;
   price_per_minute: string; earnings: string; total_earned: string; passes_issued: number; active: boolean;
+  ca_public_key: string | null;
 }
 interface Pass {
   serial: number; machine_id: string; buyer: string; key_id: string; ssh_pubkey: string;
@@ -68,6 +69,7 @@ function table(rows: string[][]) {
 
 function sshArgs(dir: string, pass: Pick<Pass, 'host' | 'port' | 'login_user'>, cmd: string[]): string[] {
   return [
+    '-F', 'none', // ignore ~/.ssh/config: only this pass's key and options apply
     '-i', path.join(dir, 'key'),
     '-o', `CertificateFile=${path.join(dir, 'key-cert.pub')}`,
     '-o', 'IdentitiesOnly=yes',
@@ -103,6 +105,22 @@ async function machines() {
   ]);
 }
 
+interface Quote { price: string; storage_fee: string; total: string; }
+
+/** After a failed or timed-out call, look for the pass on-chain by its public key. */
+async function recoverPass(sshPubkey: string): Promise<Pass | null> {
+  const key = sshPubkey.split(/\s+/)[1];
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      const mine = (await view<Pass[]>('list_recent_passes', {})).find((p) => p.ssh_pubkey.split(/\s+/)[1] === key);
+      if (mine && mine.status !== 'Pending') return mine;
+      if (!mine && attempt >= 3) return null;
+    } catch { /* RPC hiccup: try again */ }
+    await new Promise((ok) => setTimeout(ok, 3000));
+  }
+  return null;
+}
+
 async function rent() {
   const machineId = rest[0];
   const minutes = Number(opt.minutes ?? '1');
@@ -111,9 +129,9 @@ async function rent() {
 
   const machine = await view<Machine | null>('get_machine', { machine_id: machineId });
   if (!machine) throw new Error(`no machine called ${machineId}; try: gatepass machines`);
-  const price = BigInt(machine.price_per_minute) * BigInt(minutes);
+  const quote = await view<Quote>('quote', { machine_id: machineId, minutes });
   const account = await signer();
-  say(`renting ${machineId} for ${minutes} min at ${fromYocto(machine.price_per_minute)} NEAR/min = ${fromYocto(price)} NEAR, paid by ${account.accountId}`);
+  say(`renting ${machineId} for ${minutes} min: ${fromYocto(quote.price)} NEAR + ${fromYocto(quote.storage_fee)} NEAR storage fee = ${fromYocto(quote.total)} NEAR, paid by ${account.accountId}`);
 
   // A throwaway key for this pass only. The private key never leaves this machine.
   fs.mkdirSync(PASS_DIR, { recursive: true });
@@ -123,32 +141,41 @@ async function rent() {
 
   say('paying and waiting for NEAR Chain Signatures to sign the pass ...');
   const started = Date.now();
-  let result;
+  let pass: Pass | null = null;
+  let txHash: string | undefined;
   try {
-    result = await call<Pass>(account, contractId(), 'buy_pass', { machine_id: machineId, ssh_pubkey: sshPubkey, minutes }, { deposit: price, gas: 300n * TGAS });
+    const result = await call<Pass>(account, contractId(), 'buy_pass', { machine_id: machineId, ssh_pubkey: sshPubkey, minutes }, { deposit: BigInt(quote.total), gas: 300n * TGAS });
+    pass = result.value;
+    txHash = result.txHash;
   } catch (err) {
-    fs.rmSync(tmp, { recursive: true, force: true });
-    throw err;
+    // The call may have gone through even though we did not get its result
+    // (for example an RPC timeout). Keep the key and look for the pass.
+    say(`did not get the result (${explain(err)}); checking the chain for the pass ...`);
+    pass = await recoverPass(sshPubkey);
+    if (!pass) {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      throw err;
+    }
   }
-  const pass = result.value;
+  const explorerUrl = txHash ? `${settings().explorer}/txns/${txHash}` : `${settings().explorer}/address/${contractId()}`;
   if (pass?.status !== 'Signed' || !pass.certificate) {
     fs.rmSync(tmp, { recursive: true, force: true });
-    throw new Error(`the pass was not signed (status ${pass?.status}); your payment was refunded. tx: ${result.explorerUrl}`);
+    throw new Error(`the pass was not signed (status ${pass?.status}); your payment was refunded. ${explorerUrl}`);
   }
 
   const dir = path.join(PASS_DIR, String(pass.serial));
   fs.rmSync(dir, { recursive: true, force: true });
   fs.renameSync(tmp, dir);
   fs.writeFileSync(path.join(dir, 'key-cert.pub'), `${pass.certificate}\n`);
-  fs.writeFileSync(path.join(dir, 'pass.json'), `${JSON.stringify({ ...pass, tx: result.txHash }, null, 2)}\n`);
+  fs.writeFileSync(path.join(dir, 'pass.json'), `${JSON.stringify({ ...pass, tx: txHash ?? null }, null, 2)}\n`);
 
   say(`pass #${pass.serial} signed in ${((Date.now() - started) / 1000).toFixed(1)}s, valid until ${iso(pass.valid_before)} (${secondsLeft(pass)}s from now)`);
-  say(`  tx:   ${result.explorerUrl}`);
+  say(`  tx:   ${explorerUrl}`);
   say(`  cert: ${path.relative(process.cwd(), path.join(dir, 'key-cert.pub'))}`);
 
   let exitCode = 0;
   if (!opt['no-ssh']) exitCode = runSsh(dir, pass, remoteCommand);
-  if (opt.json) console.log(JSON.stringify({ ...pass, tx: result.txHash, explorer: result.explorerUrl, dir, ssh_exit_code: opt['no-ssh'] ? null : exitCode }, null, 2));
+  if (opt.json) console.log(JSON.stringify({ ...pass, tx: txHash ?? null, explorer: explorerUrl, dir, ssh_exit_code: opt['no-ssh'] ? null : exitCode }, null, 2));
   process.exitCode = exitCode;
 }
 
@@ -176,43 +203,50 @@ async function passes() {
 }
 
 async function hostSetup() {
-  const ca = await view<string | null>('ca_public_key', {});
-  if (!ca) throw new Error('the contract has no CA key yet; call refresh_ca_key on it');
+  const id = rest[0];
+  if (!id) throw new Error('usage: gatepass host-setup <machine> [--write <file>]');
+  const machine = await view<Machine | null>('get_machine', { machine_id: id });
+  if (!machine) throw new Error(`no machine called ${id}; try: gatepass machines`);
+  const ca = machine.ca_public_key;
+  if (!ca) throw new Error(`${id} has no CA key yet; call refresh_ca_key for it on the contract`);
   if (opt.write) {
     fs.mkdirSync(path.dirname(path.resolve(opt.write)), { recursive: true });
     fs.writeFileSync(opt.write, `${ca}\n`);
-    say(`wrote the Gatepass CA public key to ${opt.write}`);
+    say(`wrote the CA public key of ${id} to ${opt.write}`);
     return;
   }
-  console.log(`# Gatepass host setup for contract ${contractId()}
+  console.log(`# Gatepass host setup for machine ${id} on contract ${contractId()}
 #
-# 1. Save this line as /etc/ssh/gatepass_ca.pub. It is the certificate authority
-#    key. Nobody holds its private half: NEAR Chain Signatures signs with it
-#    only when the contract asks, and the contract asks only after payment.
+# 1. Save this line as /etc/ssh/gatepass_ca.pub. It is this machine's own
+#    certificate authority key. Nobody holds its private half: NEAR Chain
+#    Signatures signs with it only when the contract asks, and the contract
+#    asks only after someone has paid for a pass on ${id}.
 ${ca}
 
 # 2. Add to /etc/ssh/sshd_config, then reload sshd:
 TrustedUserCAKeys /etc/ssh/gatepass_ca.pub
 PasswordAuthentication no
-AllowTcpForwarding no
+DisableForwarding yes
 
 # 3. Install host/gatepass-session from this repo as
 #    /usr/local/bin/gatepass-session (root-owned, mode 0755). Every pass forces
 #    it as the login command; it ends the session when the paid time is up.
 #
-# 4. Create the login user you registered for this machine (never root).`);
+# 4. Create the login user "${machine.login_user}" (the one registered for ${id}).`);
 }
 
 async function register() {
   const id = rest[0];
   if (!id || !opt.host || !opt.user || !opt.price) throw new Error('usage: gatepass register <id> --host H --port P --user U --price <NEAR per minute>');
   const account = await signer();
+  const fee = (await view<{ machine_storage_fee: string }>('get_config', {})).machine_storage_fee;
   const r = await call<Machine>(account, contractId(), 'register_machine', {
     id, host: opt.host, port: Number(opt.port ?? '22'), login_user: opt.user, price_per_minute: toYocto(opt.price).toString(),
-  });
+  }, { deposit: BigInt(fee) });
   if (opt.json) return console.log(JSON.stringify({ ...r.value, tx: r.txHash }, null, 2));
-  console.log(`registered ${r.value.id}, owned by ${r.value.owner}, at ${fromYocto(r.value.price_per_minute)} NEAR/min`);
-  console.log(`  tx: ${r.explorerUrl}`);
+  console.log(`registered ${r.value.id}, owned by ${r.value.owner}, at ${fromYocto(r.value.price_per_minute)} NEAR/min (storage fee ${fromYocto(fee)} NEAR)`);
+  console.log(`  CA key: ${r.value.ca_public_key}`);
+  console.log(`  tx:     ${r.explorerUrl}`);
 }
 
 async function withdraw() {
@@ -227,6 +261,15 @@ async function withdraw() {
   console.log(`  tx: ${r.explorerUrl}`);
 }
 
+/** Re-read a machine's CA key from the MPC contract (needed only if registration could not fetch it). */
+async function refreshCa() {
+  const id = rest[0];
+  if (!id) throw new Error('usage: gatepass refresh-ca <machine>');
+  const r = await call<Machine>(await signer(), contractId(), 'refresh_ca_key', { machine_id: id });
+  console.log(`CA key of ${id}: ${r.value.ca_public_key}`);
+  console.log(`  tx: ${r.explorerUrl}`);
+}
+
 function help() {
   const s = settings();
   console.log(`gatepass: pay on NEAR, get an SSH pass for exactly the minutes you paid for
@@ -236,15 +279,16 @@ function help() {
            [--no-ssh] [--json] [-- command]   (or run one command)
   gatepass ssh <serial> [-- command]        log in again with a saved pass
   gatepass passes [machine]                 passes issued, newest first
-  gatepass host-setup [--write <file>]      CA key and sshd lines for a host
+  gatepass host-setup <machine> [--write F] the machine's CA key and sshd lines
   gatepass register <id> --host H --port P --user U --price <NEAR/min>
   gatepass withdraw <machine>               owner: collect earnings
+  gatepass refresh-ca <machine>             re-read a machine's CA key from the MPC
 
 contract: ${s.contractId ?? '(set GATEPASS_CONTRACT in .env)'}   network: ${s.networkId}   account: ${s.accountId ?? '(none)'}`);
 }
 
 const commands: Record<string, () => Promise<void> | void> = {
-  machines, rent, ssh, passes, 'host-setup': hostSetup, register, withdraw, help,
+  machines, rent, ssh, passes, 'host-setup': hostSetup, register, withdraw, 'refresh-ca': refreshCa, help,
 };
 
 try {
