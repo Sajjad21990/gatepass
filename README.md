@@ -54,10 +54,10 @@ You need Docker (running), Node 22.18 or newer, and the OpenSSH client
 (`ssh`, `ssh-keygen`). You do **not** need Rust: the contract is already
 deployed on testnet at `gatepass-v2.gp-spike-47008742.testnet`.
 
-1. Install dependencies.
+1. Get the code and install dependencies.
 
    ```bash
-   npm install
+   git clone https://github.com/Sajjad21990/gatepass.git && cd gatepass && npm install
    ```
 
 2. Create a throwaway testnet account. This asks the NEAR testnet faucet for a
@@ -68,6 +68,13 @@ deployed on testnet at `gatepass-v2.gp-spike-47008742.testnet`.
    ```
 
    You should see: `created gp-xxxxxxxxxx.testnet with 10.000 NEAR; key written to .env`
+
+   Optional: create a second account so the renter and the machine owner are
+   different accounts. The demos use it for paying when it exists.
+
+   ```bash
+   node scripts/create-testnet-account.mjs --env .env.renter
+   ```
 
 3. Run the demo. It takes about 90 seconds.
 
@@ -97,6 +104,58 @@ deployed on testnet at `gatepass-v2.gp-spike-47008742.testnet`.
 
    Open http://127.0.0.1:4173. You should see the machines with their CA
    keys, and each pass counting down and flipping to "Expired".
+
+### Let an AI agent rent by itself
+
+```bash
+scripts/agent-demo.sh "Find out how many CPU cores and how much memory a rented machine has."
+```
+
+This lists two machines owned by your account (0.01 and 0.05 NEAR per minute,
+two separate Docker sshd containers, each with its own CA key) and hands the
+task to `agent/agent.ts`. The agent has a wallet, a budget of 0.1 NEAR and four
+tools: list machines, get a quote, rent, run a command. It decides whether a
+machine is needed at all, which one, for how long and what to run, and reports
+what it spent.
+
+You should see lines like these, ending with an answer and the cost:
+
+```
+tool   list_machines({})
+tool   rent_machine({"machine_id":"demo-xxxxxxxx","minutes":1})
+tool   run_command({"pass_serial":5,"command":"nproc && free -h && uname -a"})
+
+answer
+The rented machine (demo-xxxxxxxx) has 12 CPU cores, 7.7GB RAM, and runs Linux kernel 7.0.14-linuxkit.
+Rented for 1 minute at 0.01 NEAR/minute, costing 0.02 NEAR.
+
+spent
+  pass #5 on demo-xxxxxxxx: 0.02 NEAR   https://testnet.nearblocks.io/txns/...
+  total 0.02 of 0.1 NEAR budget (plus network fees)
+```
+
+Which model decides is up to you. Set these in `.env` (any OpenAI-compatible
+chat API with tool calling works):
+
+| Setting | Meaning |
+| --- | --- |
+| `AGENT_LLM_API_KEY` | Key for the endpoint. If empty, no model is used (see below). |
+| `AGENT_LLM_BASE_URL` | Default `https://cloud-api.near.ai/v1` (NEAR AI Cloud). |
+| `AGENT_LLM_MODEL` | Default `z-ai/glm-5.3-flash`. |
+
+- **Tested:** with `qwen3:8b` served locally by Ollama
+  (`AGENT_LLM_BASE_URL=http://127.0.0.1:11434/v1`, any non-empty key). The
+  output above is from that run. Asked "What is 17 times 23?", the same agent
+  answered without renting anything and spent nothing.
+- **Not tested:** the NEAR AI Cloud default. The request format follows its
+  documentation, but no API key was available while building this.
+- **No key:** the script falls back to a fixed rule (cheapest machine, one
+  minute, one preset command) and says so in its output. That reproduces the
+  payment and login flow, but no model is deciding anything.
+
+The budget is enforced in the script, not by the model: a rent that would
+exceed it is refused before any transaction is sent. Commands chosen by the
+model run only on the rented machine, never on yours.
 
 ### Use the CLI by hand
 
@@ -275,9 +334,10 @@ What can still get around it:
 | --- | --- |
 | `contract/` | The Rust contract. `src/cert.rs` is the OpenSSH certificate encoder; `src/lib.rs` is machines, passes, signing and earnings; `src/tests.rs` is the unit tests. |
 | `cli/` | The `gatepass` CLI (TypeScript, run directly by Node). |
-| `host/` | The demo host: Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals` and `gatepass-reaper`. |
+| `agent/` | `agent.ts`: an agent with a wallet and a budget that rents machines by itself. |
+| `host/` | The demo host (two containers in `docker-compose.yml`): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals` and `gatepass-reaper`. |
 | `dashboard/` | Read-only web page: machines, passes with live countdown, earnings. No wallet needed. |
-| `scripts/` | `demo.sh`, `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
+| `scripts/` | `demo.sh`, `agent-demo.sh`, `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
 | `spike/` | The first go/no-go experiment: a hand-built certificate signed by Chain Signatures directly from an account, before the contract existed. |
 
 ## Built with

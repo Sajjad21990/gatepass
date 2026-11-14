@@ -14,3 +14,13 @@ services:
       # replaced gatepass_ca.pub is visible in the container without a restart.
       - ./host/ca:/etc/ssh/gatepass-ca:ro
     restart: unless-stopped
+
+  # A second, separate machine (port 2223) with its own CA directory. Used by
+  # scripts/agent-demo.sh so the agent has two machines to choose between.
+  host-b:
+    build: ./host
+    ports:
+      - "127.0.0.1:2223:22"
+    volumes:
+      - ./host/ca-b:/etc/ssh/gatepass-ca:ro
+    restart: unless-stopped

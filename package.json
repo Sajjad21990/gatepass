@@ -10,6 +10,7 @@
   },
   "scripts": {
     "demo": "scripts/demo.sh",
+    "agent-demo": "scripts/agent-demo.sh",
     "dashboard": "node scripts/dashboard.ts",
     "deploy": "node scripts/deploy.ts",
     "gatepass": "node cli/gatepass.ts",
