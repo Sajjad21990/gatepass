@@ -1,0 +1,25 @@
+# Gatepass demo host: certificate-only SSH.
+Port 22
+
+# Trust any user certificate signed by this CA. The file is bind-mounted from
+# ./host/ca and is re-read on every login attempt, so it can be replaced live.
+# If it is missing, sshd still runs and simply rejects every login.
+TrustedUserCAKeys /etc/ssh/gatepass-ca/gatepass_ca.pub
+
+# Certificates are the ONLY way in: no passwords, no authorized_keys files.
+PubkeyAuthentication yes
+AuthorizedKeysFile none
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+
+# Only the "renter" account may log in (cert principal must be "renter").
+PermitRootLogin no
+AllowUsers renter
+
+# VERBOSE logs the cert ID, serial and CA fingerprint for each auth decision.
+LogLevel VERBOSE
+
+# OpenSSH >= 9.8 temporarily blocks a source IP after a few failed logins.
+# Behind Docker's port mapping every client shows up as the bridge gateway IP,
+# so a few rejected demo logins would lock out the valid ones too. Demo only.
+PerSourcePenalties no

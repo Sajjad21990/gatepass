@@ -1,0 +1,16 @@
+# Gatepass demo host: an sshd that only accepts OpenSSH user certificates
+# signed by the CA in ./host/ca/gatepass_ca.pub.
+#
+#   docker compose up -d --build
+#   ssh -p 2222 renter@127.0.0.1        (with a cert whose principal is "renter")
+#   docker compose logs -f host         (auth decisions)
+services:
+  host:
+    build: ./host
+    ports:
+      - "127.0.0.1:2222:22"
+    volumes:
+      # Mount the DIRECTORY (not the single file) so that a rewritten or
+      # replaced gatepass_ca.pub is visible in the container without a restart.
+      - ./host/ca:/etc/ssh/gatepass-ca:ro
+    restart: unless-stopped

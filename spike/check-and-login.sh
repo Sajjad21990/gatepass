@@ -28,7 +28,14 @@ ssh "${SSH_OPTS[@]}" -o CertificateFile="$CERT" "$LOGIN@$HOST" \
 
 echo
 echo "== 4. login WITHOUT the certificate (must be refused)"
-if ssh "${SSH_OPTS[@]}" -o CertificateFile=none "$LOGIN@$HOST" true 2>/dev/null; then
+# ssh auto-loads <key>-cert.pub when it sits next to the key, so test with a
+# copy of the key that has no certificate beside it.
+BARE=$(mktemp -d)
+trap 'rm -rf "$BARE"' EXIT
+cp "$KEY" "$BARE/key" && chmod 600 "$BARE/key"
+BARE_OPTS=("${SSH_OPTS[@]}")
+BARE_OPTS[3]="$BARE/key"
+if ssh "${BARE_OPTS[@]}" "$LOGIN@$HOST" true 2>/dev/null; then
   echo "UNEXPECTED: bare key was accepted" >&2
   exit 1
 fi
