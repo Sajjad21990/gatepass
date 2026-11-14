@@ -18,7 +18,7 @@ function readConfig() {
   if (rpc) {
     try {
       const url = new URL(rpc);
-      if (url.protocol === 'https:' || url.protocol === 'http:') cfg.rpc = url.href;
+      if (url.protocol === 'https:' || url.protocol === 'http:') cfg.rpc = [url.href];
     } catch { /* keep the default */ }
   }
   cfg.explorer = String(cfg.explorer).replace(/\/+$/, '');
@@ -30,12 +30,30 @@ const $ = (id) => document.getElementById(id);
 
 // ---------- RPC ----------
 
+// Several endpoints: when one fails or rate-limits, move to the next and stay there.
+const rpcUrls = [cfg.rpc].flat();
+let rpcIndex = 0;
+
 async function view(method, args = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < rpcUrls.length; attempt++) {
+    try {
+      return await viewOnce(rpcUrls[rpcIndex], method, args);
+    } catch (err) {
+      lastError = err;
+      if (err.fromContract) throw err; // the contract answered; another endpoint would say the same
+      rpcIndex = (rpcIndex + 1) % rpcUrls.length;
+    }
+  }
+  throw lastError;
+}
+
+async function viewOnce(rpcUrl, method, args = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   let res;
   try {
-    res = await fetch(cfg.rpc, {
+    res = await fetch(rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: ctl.signal,
@@ -64,7 +82,11 @@ async function view(method, args = {}) {
     const detail = typeof e.data === 'string' ? e.data : e.cause?.name || e.message || JSON.stringify(e);
     throw new Error(`${method}: ${detail}`);
   }
-  if (body.result?.error) throw new Error(`${method}: ${body.result.error}`);
+  if (body.result?.error) {
+    const err = new Error(`${method}: ${body.result.error}`);
+    err.fromContract = true;
+    throw err;
+  }
   if (!Array.isArray(body.result?.result)) throw new Error(`${method}: unexpected RPC response`);
   return JSON.parse(new TextDecoder().decode(Uint8Array.from(body.result.result)));
 }
@@ -354,7 +376,7 @@ function renderStatus() {
     sync.dataset.state = 'error';
     sync.textContent = 'RPC error, retrying';
     const stale = state.lastOk ? ` Showing what the contract said at ${formatClock(state.lastOk / 1000)}.` : '';
-    error.textContent = `Can't read ${cfg.contract} from ${cfg.rpc}: ${state.error}. Trying again every ${REFRESH_MS / 1000} seconds.${stale}`;
+    error.textContent = `Can't read ${cfg.contract} from ${rpcUrls[rpcIndex]}: ${state.error}. Trying again every ${REFRESH_MS / 1000} seconds.${stale}`;
     error.hidden = false;
     if (!state.data) {
       for (const id of ['passes-note', 'machines-note']) $(id).textContent = 'Nothing to show until the RPC answers.';

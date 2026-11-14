@@ -37,7 +37,9 @@ const dashDash = argv.indexOf('--');
 const ownArgs = dashDash === -1 ? argv : argv.slice(0, dashDash);
 const remoteCommand = dashDash === -1 ? [] : argv.slice(dashDash + 1);
 
-const { values: opt, positionals } = parseArgs({
+function parseCli() {
+  try {
+    return parseArgs({
   args: ownArgs,
   allowPositionals: true,
   options: {
@@ -52,9 +54,17 @@ const { values: opt, positionals } = parseArgs({
     help: { type: 'boolean', short: 'h' },
   },
 });
+  } catch (err: any) {
+    console.error(`gatepass: ${String(err?.message ?? err).split('\n')[0]}`);
+    console.error('run "gatepass help" for usage');
+    process.exit(2);
+  }
+}
+const { values: opt, positionals } = parseCli();
 const [command, ...rest] = positionals;
 
-const say = (...a: unknown[]) => { if (!opt.json) console.error(...a); };
+// GATEPASS_QUIET=1 drops the CLI's own narration (used by the agent, which wants only the remote output).
+const say = (...a: unknown[]) => { if (!opt.json && !process.env.GATEPASS_QUIET) console.error(...a); };
 const iso = (unix: number) => new Date(unix * 1000).toISOString().replace('.000Z', 'Z');
 const secondsLeft = (p: Pass) => p.valid_before - Math.floor(Date.now() / 1000);
 
@@ -106,7 +116,8 @@ function sshArgs(dir: string, pass: Target, cmd: string[]): string[] {
 function runSsh(dir: string, pass: Target, cmd: string[]): number {
   const args = sshArgs(dir, pass, cmd);
   say(`$ ssh ${pass.login_user}@${pass.host} -p ${pass.port}${cmd.length ? ` ${cmd.join(' ')}` : ''}${pass.host_key ? '   (host key pinned from the contract)' : ''}`);
-  const r = spawnSync('ssh', args, { stdio: 'inherit' });
+  // With --json, stdout carries only the JSON result; the remote output goes to stderr.
+  const r = spawnSync('ssh', args, { stdio: opt.json ? ['inherit', 2, 'inherit'] : 'inherit' });
   return r.status ?? 255;
 }
 
@@ -142,12 +153,12 @@ async function rent() {
   const machineId = rest[0];
   const minutes = Number(opt.minutes ?? '1');
   if (!machineId) throw new Error('usage: gatepass rent <machine> --minutes N [--no-ssh] [-- command ...]');
-  if (!Number.isInteger(minutes) || minutes < 1) throw new Error('--minutes must be a whole number of at least 1');
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) throw new Error('--minutes must be a whole number from 1 to 240');
 
   const machine = await view<Machine | null>('get_machine', { machine_id: machineId });
   if (!machine) throw new Error(`no machine called ${machineId}; try: gatepass machines`);
   const busyFor = machine.busy_until - Math.floor(Date.now() / 1000);
-  if (busyFor > 0) throw new Error(`${machineId} is in use by another renter for ${busyFor} more seconds; a machine has one renter at a time`);
+  if (busyFor > 0) throw new Error(`${machineId} is in use for ${busyFor} more seconds (a machine has one pass at a time). If that pass is yours, use: gatepass ssh <serial>`);
   const quote = await view<Quote>('quote', { machine_id: machineId, minutes });
   const account = await signer();
   say(`renting ${machineId} for ${minutes} min: ${fromYocto(quote.price)} NEAR + ${fromYocto(quote.storage_fee)} NEAR storage fee = ${fromYocto(quote.total)} NEAR, paid by ${account.accountId}`);
@@ -211,13 +222,14 @@ async function ssh() {
 }
 
 async function passes() {
+  if (rest[0] && !(await view<Machine | null>('get_machine', { machine_id: rest[0] }))) throw new Error(`no machine called ${rest[0]}; try: gatepass machines`);
   const list = rest[0]
     ? await view<Pass[]>('list_passes', { machine_id: rest[0] })
     : await view<Pass[]>('list_recent_passes', {});
   if (opt.json) return console.log(JSON.stringify(list, null, 2));
   if (list.length === 0) return console.log('no passes yet');
   table([
-    ['SERIAL', 'MACHINE', 'BUYER', 'MIN', 'PAID', 'VALID UNTIL (UTC)', 'STATE'],
+    ['SERIAL', 'MACHINE', 'BUYER', 'MIN', 'PRICE', 'VALID UNTIL (UTC)', 'STATE'],
     ...list.map((p) => [String(p.serial), p.machine_id, p.buyer, String(p.minutes), `${fromYocto(p.paid)} NEAR`, iso(p.valid_before), passState(p)]),
   ]);
 }

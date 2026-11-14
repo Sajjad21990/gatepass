@@ -4,6 +4,23 @@
 #   docker compose up -d --build
 #   ssh -p 2222 renter@127.0.0.1        (with a cert whose principal is "renter")
 #   docker compose logs -f host         (auth decisions, reaper, wipes)
+#   docker compose logs -f gate         (who connected, from which address)
+#
+# Each machine is two containers:
+#
+#   host / host-b   the machine itself: sshd, the renter's sandbox. It sits on
+#                   its own Docker network that is `internal`, i.e. has no way
+#                   out: no internet, no Docker host, no other machine.
+#   gate / gate-b   the only door in: publishes the port and copies bytes to
+#                   the machine's port 22 (see host/gate/Dockerfile).
+#
+# Where the machines are published (defaults: this computer only):
+#
+#   GATEPASS_BIND    address to listen on          default 127.0.0.1
+#   GATEPASS_PORT    port of the first machine     default 2222
+#   GATEPASS_PORT_B  port of the second machine    default 2223
+#
+# To rent a machine out to the world: GATEPASS_BIND=0.0.0.0 docker compose up -d
 
 # The container IS the renter's sandbox, so the limits live here. Both machines
 # share them; change a number in this block and `docker compose up -d`.
@@ -56,21 +73,80 @@ x-machine: &machine
     - DAC_OVERRIDE    # gatepass-wipe: delete renter's files whatever their permissions
     - FOWNER          # gatepass-wipe: put the home directory's mode back if renter changed it
 
+# The door in front of a machine. A plain TCP forwarder (socat): SSH is end to
+# end between the renter and the machine's sshd, so the gate never sees keys or
+# plaintext. It is not root, has no capabilities and nothing writable.
+# Because of it, sshd sees every client as coming from the gate's address (that
+# is why PerSourcePenalties is off in host/sshd_config); the client's real
+# address is in the gate's log.
+x-gate: &gate
+  build: ./host/gate
+  restart: unless-stopped
+  read_only: true
+  user: "65534:65534"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  mem_limit: 64m
+  memswap_limit: 64m
+  cpus: 0.5
+  pids_limit: 128          # one small process per open connection (socat allows 64)
+  sysctls:
+    net.ipv4.ip_forward: 0   # a forwarder of SSH connections, never a router
+
 services:
   host:
     <<: *machine
-    ports:
-      - "127.0.0.1:2222:22"
+    # NO OUTBOUND NETWORK: the machine is attached only to its own internal
+    # network, where the one other thing is its gate. A renter cannot reach the
+    # internet, this computer, your LAN or the other machine.
+    # To give renters outbound network on purpose, also attach the machine to
+    # the default network (`networks: [machine-a, default]`). Then they can
+    # reach the internet from your address, the Docker host and every other
+    # container on that network: firewall accordingly.
+    networks:
+      - machine-a
     volumes:
       # Mount the DIRECTORY (not the single file) so that a rewritten or
       # replaced gatepass_ca.pub is visible in the container without a restart.
       - ./host/ca:/etc/ssh/gatepass-ca:ro
 
+  gate:
+    <<: *gate
+    depends_on:
+      - host             # the machine first, then its door
+    command: ["-d", "-d", "TCP-LISTEN:2222,fork,reuseaddr,keepalive,max-children=64", "TCP:host:22,keepalive,connect-timeout=10"]
+    networks:
+      - default
+      - machine-a
+    ports:
+      - "${GATEPASS_BIND:-127.0.0.1}:${GATEPASS_PORT:-2222}:2222"
+
   # A second, separate machine (port 2223) with its own CA directory. Used by
   # scripts/agent-demo.sh so the agent has two machines to choose between.
   host-b:
     <<: *machine
-    ports:
-      - "127.0.0.1:2223:22"
+    networks:
+      - machine-b
     volumes:
       - ./host/ca-b:/etc/ssh/gatepass-ca:ro
+
+  gate-b:
+    <<: *gate
+    depends_on:
+      - host-b             # the machine first, then its door
+    command: ["-d", "-d", "TCP-LISTEN:2222,fork,reuseaddr,keepalive,max-children=64", "TCP:host-b:22,keepalive,connect-timeout=10"]
+    networks:
+      - default
+      - machine-b
+    ports:
+      - "${GATEPASS_BIND:-127.0.0.1}:${GATEPASS_PORT_B:-2223}:2222"
+
+networks:
+  # `internal: true` = Docker gives the network no route to anywhere else.
+  # One per machine, so the machines cannot see each other either.
+  machine-a:
+    internal: true
+  machine-b:
+    internal: true

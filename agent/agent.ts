@@ -21,8 +21,8 @@
 //   AGENT_LLM_MODEL      a model that supports tool calling
 //                        (default z-ai/glm-5.3-flash, which runs in a TEE there)
 //
-// With no key set it falls back to a fixed rule (cheapest open machine within
-// budget, one minute, run --command), so the flow can be reproduced without
+// With no key set it falls back to a fixed rule (cheapest machine that is free
+// right now, one minute, run --command), so the flow can be reproduced without
 // any model. The fallback makes no decisions of its own and says so.
 //
 // The budget is enforced here in code, not by the model: a rent that would
@@ -60,7 +60,7 @@ const clip = (s: string, n = 3000) => (s.length > n ? `${s.slice(0, n)}\n...[${s
 
 async function cli(args: string[], timeoutMs = 180_000) {
   try {
-    const r = await run(process.execPath, [CLI, ...args], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
+    const r = await run(process.execPath, [CLI, ...args], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GATEPASS_QUIET: '1' } });
     return { code: 0, stdout: r.stdout, stderr: r.stderr };
   } catch (err: any) {
     return { code: typeof err.code === 'number' ? err.code : 1, stdout: err.stdout ?? '', stderr: err.stderr ?? String(err.message) };
@@ -106,8 +106,8 @@ const tools = {
     const left = pass.valid_before - Math.floor(Date.now() / 1000);
     if (left <= 0) return { error: 'this pass has expired; rent again if more time is needed' };
     const r = await cli(['ssh', String(pass_serial), '--', String(command)], (left + 15) * 1000);
-    // The CLI and the host wrapper narrate on stderr; keep only what the command itself printed there.
-    const stderr = r.stderr.split('\n').filter((l) => !/^(pass #\d+|\$ ssh |gatepass: session ends in)/.test(l)).join('\n').trim();
+    // The host wrapper announces the deadline on stderr; keep only what the command itself printed there.
+    const stderr = r.stderr.split('\n').filter((l) => !/^gatepass: session ends in/.test(l)).join('\n').trim();
     return { exit_code: r.code, stdout: clip(r.stdout.trim()), stderr: clip(stderr, 1000), seconds_left: Math.max(0, pass.valid_before - Math.floor(Date.now() / 1000)), ...(r.code === 124 ? { note: 'exit code 124: the paid time ran out and the host ended the session' } : {}) };
   },
 };
@@ -188,14 +188,20 @@ async function withModel(): Promise<string> {
 // ---------- no model: a fixed rule, clearly labelled ----------
 
 async function withoutModel(): Promise<string> {
-  console.log(dim('no AGENT_LLM_API_KEY set: using the fixed rule (cheapest open machine within budget, 1 minute). No model is deciding anything.'));
+  console.log(dim('no AGENT_LLM_API_KEY set: using the fixed rule (cheapest machine that is free now, 1 minute). No model is deciding anything.'));
   const command = opt.command;
   if (!command) throw new Error('Without a model, say what to run: --command "nproc; free -m"');
-  const machines = (await callTool('list_machines', {})) as any[];
-  if (!machines.length) return 'No machine is open for rent.';
+  const machines = ((await callTool('list_machines', {})) as any[]).filter((m) => m.available === 'now');
+  if (!machines.length) {
+    process.exitCode = 1;
+    return 'No machine is free right now (a machine has one renter at a time). Try again in a minute.';
+  }
   const cheapest = machines.sort((a, b) => Number(a.price_per_minute_near) - Number(b.price_per_minute_near))[0];
   const rented: any = await callTool('rent_machine', { machine_id: cheapest.machine_id, minutes: 1 });
-  if (rented.error) return `Could not rent: ${rented.error}`;
+  if (rented.error) {
+    process.exitCode = 1;
+    return `Could not rent: ${rented.error}`;
+  }
   const out: any = await callTool('run_command', { pass_serial: rented.pass_serial, command });
   return `Ran on ${cheapest.machine_id} for 1 minute (exit code ${out.exit_code}):\n${out.stdout || out.stderr || out.error}`;
 }

@@ -12,12 +12,14 @@
 # is the machine owner; otherwise one account plays both parts.
 #
 # What it shows, in order:
-#   1. the host trusts only its machine's CA key (held by nobody)
-#   2. paying for 1 minute returns a pass signed by NEAR Chain Signatures
-#   3. the pass logs in and runs a command
-#   4. a long-running session is cut off when the paid minute is up
-#   5. a fresh login with the same pass is refused
-#   6. the payment is in the machine's earnings and the owner withdraws it
+#   1. the machine is listed on the contract, with its own CA key
+#   2. the host trusts only that CA key (held by nobody), and its own SSH host
+#      key is published on-chain
+#   3. paying for 1 minute returns a pass signed by NEAR Chain Signatures
+#   4. the pass logs in and runs a command
+#   5. a long-running session is cut off when the paid minute is up
+#   6. a fresh login with the same pass is refused
+#   7. the payment is in the machine's earnings and the owner withdraws it
 set -euo pipefail
 cd "$(dirname "$0")/.."
 GP=bin/gatepass
@@ -49,6 +51,14 @@ docker compose up -d --build --quiet-pull >/dev/null 2>&1 || docker compose up -
 $GP host-setup "$MACHINE" --write host/ca/gatepass_ca.pub
 ssh-keygen -l -f host/ca/gatepass_ca.pub
 publish_host_key "$MACHINE" host
+
+# A machine has one renter at a time; if a pass from an earlier run is still
+# live, wait for it to end.
+BUSY=$($GP machines --json | json "Math.max(0,(v.find(m=>m.id==='$MACHINE').busy_until||0)-Math.floor(Date.now()/1000))")
+if [ "$BUSY" -gt 0 ]; then
+  echo "$MACHINE is in use for $BUSY more seconds (one renter at a time); waiting ..."
+  sleep $((BUSY + 4))
+fi
 
 step "3. Pay for 1 minute on $MACHINE and get a pass"
 SERIAL=$(as_renter $GP rent "$MACHINE" --minutes 1 --no-ssh --json | json 'v.serial')

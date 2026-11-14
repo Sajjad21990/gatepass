@@ -91,14 +91,17 @@ deployed on testnet at `gatepass.testnet`.
    | Step | What happens | What you see |
    | --- | --- | --- |
    | 1 | Your account registers its own demo machine at 0.01 NEAR per minute (first run only) | `registered demo-xxxxxxxx ...`, its `CA key: ssh-ed25519 ...`, and a table of machines |
-   | 2 | A Docker sshd starts and is given that machine's CA key | `256 SHA256:... gatepass-ca:demo-xxxxxxxx (ED25519)` |
+   | 2 | A sandboxed Docker sshd starts, is given that machine's CA key, and its SSH host key is published on-chain (first run only) | `wrote the CA public key of demo-xxxxxxxx ...`, `256 SHA256:... gatepass-ca:demo-xxxxxxxx (ED25519)`, and on a first run `host key of demo-xxxxxxxx published` |
    | 3 | You pay for 1 minute; Chain Signatures signs the pass | `pass #N`, then the certificate with `Principals: renter` and `force-command /usr/local/bin/gatepass-session <expiry>` |
-   | 4 | The pass logs in and runs a command | `gatepass: session ends in 5Xs` and `hello from renter@<container id>` |
-   | 5 | A long job is started and cut off when the minute is up | `job running, 0s` ... `job running, 50s`, then `gatepass: time is up, session closed` and `session exit code: 124` |
+   | 4 | The pass logs in and runs a command | `(host key pinned from the contract)`, `gatepass: session ends in 5Xs` and `hello from renter@<container id>` |
+   | 5 | A long job is started and cut off when the minute is up | a `job running, Ns` line every 5 seconds, then `gatepass: time is up, session closed` and `session exit code: 124` |
    | 6 | The same pass is tried again | `Permission denied (publickey).` then `refused, as expected` |
    | 7 | The pass is listed from the chain and the owner withdraws | `withdrew 0.01 NEAR from demo-xxxxxxxx to <your account>` and an explorer link |
 
    The script ends with `Demo complete.` and exit code 0.
+
+   A machine has one renter at a time, so if you run the demo again within a
+   minute it first prints `... is in use for N more seconds; waiting ...`.
 
 4. Optional: watch it in the dashboard while the demo runs.
 
@@ -112,32 +115,39 @@ deployed on testnet at `gatepass.testnet`.
 ### Let an AI agent rent by itself
 
 ```bash
-scripts/agent-demo.sh "Find out how many CPU cores and how much memory a rented machine has."
+scripts/agent-demo.sh
 ```
 
 This lists two machines owned by your account (0.01 and 0.05 NEAR per minute,
-two separate Docker sshd containers, each with its own CA key) and hands the
-task to `agent/agent.ts`. The agent has a wallet, a budget of 0.1 NEAR and four
-tools: list machines, get a quote, rent, run a command. It decides whether a
-machine is needed at all, which one, for how long and what to run, and reports
-what it spent.
+two separate sandboxed sshd containers, each with its own CA key) and hands a
+task to `agent/agent.ts`. The default task is "How many prime numbers are there
+below 50000? Work it out by actually running code, not from memory." Pass your
+own task in quotes to change it.
+
+The agent has a wallet, a budget of 0.1 NEAR and four tools: list machines, get
+a quote, rent, run a command. It decides whether a machine is needed at all,
+which one, for how long and what to run, and reports what it spent.
 
 You should see lines like these, ending with an answer and the cost:
 
 ```
 tool   list_machines({})
 tool   rent_machine({"machine_id":"demo-xxxxxxxx","minutes":1})
-tool   run_command({"pass_serial":5,"command":"nproc && free -h && uname -a"})
+tool   run_command({"pass_serial":14,"command":"python3 - << 'PY'\n# Count primes below 50000 using a simple sieve ..."})
+       -> {"exit_code":0,"stdout":"5133","stderr":"","seconds_left":50}
 
 answer
-The rented machine (demo-xxxxxxxx) has 12 CPU cores, 7.7GB RAM, and runs Linux kernel 7.0.14-linuxkit.
-Rented for 1 minute at 0.01 NEAR/minute, costing 0.02 NEAR.
+There are 5133 primes below 50,000.
+I rented machine demo-xxxxxxxx for 1 minute. Cost: 0.02 NEAR.
 
 spent
-  pass #5 on demo-xxxxxxxx: 0.02 NEAR   https://testnet.nearblocks.io/txns/...
+  pass #14 on demo-xxxxxxxx: 0.02 NEAR   https://testnet.nearblocks.io/txns/...
   total 0.02 of 0.1 NEAR budget (plus network fees)
-  model: 4 calls, 8492 input + 2356 output tokens (qwen3:8b)
+  model: 4 calls, 3371 input + 895 output tokens (gpt-5-mini)
 ```
+
+(5133 is the right answer.) If the cheap machine is still in use from a run
+less than a minute ago, the agent sees that and waits or picks the other one.
 
 Which model decides is up to you. Set these in `.env` (any OpenAI-compatible
 chat API with tool calling works):
@@ -149,18 +159,20 @@ chat API with tool calling works):
 | `AGENT_LLM_MODEL` | Default `z-ai/glm-5.3-flash`. |
 
 - **Tested with OpenAI:** `AGENT_LLM_BASE_URL=https://api.openai.com/v1` and
-  `AGENT_LLM_MODEL=gpt-5-mini`. It asked for a quote, rented the cheaper
-  machine for one minute, ran one command and answered: 5 model calls, 3,999
-  input and 2,122 output tokens, about half a US cent at list prices.
+  `AGENT_LLM_MODEL=gpt-5-mini`. The output above is from that run: 4 model
+  calls, 3,371 input and 895 output tokens, about a quarter of a US cent at
+  list prices. On an earlier run, before Python was in the image, the same
+  model found `python3` and `perl` missing, listed the available tools and
+  got the same answer with `seq | factor | awk`.
 - **Tested with a local model:** `qwen3:8b` served by Ollama
-  (`AGENT_LLM_BASE_URL=http://127.0.0.1:11434/v1`, any non-empty key). The
-  output above is from that run. Asked "What is 17 times 23?", the same agent
-  answered without renting anything and spent nothing.
+  (`AGENT_LLM_BASE_URL=http://127.0.0.1:11434/v1`, any non-empty key). Asked
+  "What is 17 times 23?", it answered without renting anything and spent
+  nothing.
 - **Model cost:** the script prints the token counts at the end of every run,
   so the cost of a run can be worked out for any provider.
 - **Not tested:** the NEAR AI Cloud default. The request format follows its
   documentation, but no API key was available while building this.
-- **No key:** the script falls back to a fixed rule (cheapest machine, one
+- **No key:** the script falls back to a fixed rule (cheapest free machine, one
   minute, one preset command) and says so in its output. That reproduces the
   payment and login flow, but no model is deciding anything.
 
@@ -170,24 +182,64 @@ model run only on the rented machine, never on yours.
 
 ### Use the CLI by hand
 
+Use the machine your own demo host trusts: the `demo-xxxxxxxx` id that
+`scripts/demo.sh` printed. Other machines in the list belong to other accounts
+and point at their owners' computers, so renting one of those pays its owner
+and then cannot connect.
+
 ```bash
-bin/gatepass machines                         # list machines and prices
-bin/gatepass rent gpu-1 --minutes 2           # pay, get a pass, open a shell
-bin/gatepass rent gpu-1 --minutes 1 -- uname -a   # or run one command
-bin/gatepass ssh <serial> -- whoami           # log in again with a saved pass
-bin/gatepass passes gpu-1                     # passes issued, read from the chain
-bin/gatepass host-setup gpu-1                 # that machine's CA key and sshd setup
+bin/gatepass machines                              # list machines, prices and availability
+bin/gatepass rent demo-xxxxxxxx --minutes 2        # pay, get a pass, open a shell
+bin/gatepass rent demo-xxxxxxxx --minutes 1 -- uname -a   # or run one command
+bin/gatepass ssh <serial> -- whoami                # log in again with a saved pass
+bin/gatepass passes demo-xxxxxxxx                  # passes issued, read from the chain
+bin/gatepass host-setup demo-xxxxxxxx              # that machine's CA key and sshd setup
 bin/gatepass register my-box --host 203.0.113.7 --port 22 --user renter --price 0.05
-bin/gatepass withdraw my-box                  # owner only
+bin/gatepass withdraw my-box                       # owner only
 bin/gatepass set-host-key my-box /etc/ssh/ssh_host_ed25519_key.pub   # owner only
+bin/gatepass refresh-ca my-box                     # re-read a machine's CA key from the MPC
 ```
 
-Add `--json` to `machines`, `passes`, `rent`, `register` or `withdraw` for
-machine-readable output, which is what an agent would use.
+Add `--json` to `machines`, `passes`, `rent`, `register`, `withdraw` or
+`set-host-key` for machine-readable output, which is what an agent would use.
+With `--json`, stdout carries only the JSON; a remote command's output goes to
+stderr.
+
+If a command reports that every RPC endpoint is rate-limiting, wait a minute or
+set `NEAR_RPC_URL` in `.env` to another testnet endpoint. Three public
+endpoints are tried in order by default.
 
 Passes are saved under `passes/<serial>/` (git-ignored): the throwaway private
 key, the certificate and a `pass.json`. Check any certificate with
 `ssh-keygen -L -f passes/<serial>/key-cert.pub`.
+
+## Put a machine on the internet
+
+The demos above run the rented machine on your own computer. To list a machine
+that anyone can rent from anywhere, run this on the machine itself (a small
+Linux VPS is enough), from a checkout of this repo with Docker running and a
+`.env` holding the owner's testnet account:
+
+```bash
+scripts/host-up.sh my-box 203.0.113.7 0.01 2222   # id, public address, NEAR per minute, port
+```
+
+It registers the machine, starts the sandboxed sshd listening on all
+interfaces, gives it the machine's CA key and publishes its SSH host key
+on-chain. You should see `my-box is listed at renter@203.0.113.7:2222`. Open
+that TCP port in the firewall. Then, from any other computer with this repo
+and a testnet account:
+
+```bash
+bin/gatepass rent my-box --minutes 1 -- uname -a
+```
+
+Status: the script and the network isolation were tested on Docker Desktop
+with the machine published on all interfaces. No public machine is running at
+the moment, and the setup has not been run on a Linux VPS yet. Before listing
+one publicly, check from a rented session that the VPS's own services are not
+reachable through the Docker gateway address; older Docker Engine versions
+allow that even on an internal network.
 
 ## Run the tests
 
@@ -227,7 +279,8 @@ node scripts/deploy.ts
 ```
 
 You should see the new contract account (`gatepass.<your account>`) and two
-explorer links. The script writes `GATEPASS_CONTRACT` to `.env`. CA keys are
+explorer links. The script writes `GATEPASS_CONTRACT` to `.env`; open the
+dashboard with `?contract=<your contract account>` to point it there. CA keys are
 derived from the contract's account id, so machines on a new deployment have
 new CA keys; `scripts/demo.sh` registers a machine and gives its key to the
 demo host.
@@ -251,8 +304,8 @@ tokens through NEAR Intents, and NFT ownership shares.
 | Machine `gpu-1` registered; contract fetches its CA key from the MPC | [68bXEUTo...](https://testnet.nearblocks.io/txns/68bXEUTod6tbMTisrBkz5ADpdAy65b2c7kt8K9kotSyr) |
 | Pass #1 bought by a renter account and signed by Chain Signatures | [3q1EM367...](https://testnet.nearblocks.io/txns/3q1EM367jXYyK3BMtR14BDroa6XwhwWthP9CPFTLzTm2) |
 | Owner withdraws earnings | [AYw2aFMn...](https://testnet.nearblocks.io/txns/AYw2aFMnseVoWFRHqcqszEJf4nRsuM35VuZcaHzt7Gxi) |
-| Pass #2 bought by the AI agent | [8y63yUb6...](https://testnet.nearblocks.io/txns/8y63yUb6u69PCE8EZVC7qbBBJLmjb9vzkJmnNQTm6CY6) |
-| First spike: MPC signs a hand-built certificate, called directly from an account | [Dtkpbaa8...](https://testnet.nearblocks.io/txns/Dtkpbaa811vUcG7ejyQ2XgELraxBEKpeAB4zjXeBgPmx) |
+| Pass #2 bought by `agent/agent.ts`, running as the renter account | [8y63yUb6...](https://testnet.nearblocks.io/txns/8y63yUb6u69PCE8EZVC7qbBBJLmjb9vzkJmnNQTm6CY6) |
+| First experiment, before the contract existed: the MPC signs a hand-built certificate, called directly from an account (script in the git history under `spike/`) | [Dtkpbaa8...](https://testnet.nearblocks.io/txns/Dtkpbaa811vUcG7ejyQ2XgELraxBEKpeAB4zjXeBgPmx) |
 
 Chain Signatures details that this project depends on, checked against the
 [MPC contract source](https://github.com/near/mpc) and the live contract:
@@ -266,7 +319,7 @@ be up to 1232 bytes. A Gatepass certificate body is about 350 bytes.
 | --- | --- | --- |
 | `register_machine(id, host, port, login_user, price_per_minute)` payable | anyone | Caller becomes the owner. Costs a 0.02 NEAR storage fee. Fetches the machine's own CA key from the MPC. `host` and `port` are display only. |
 | `quote(machine_id, minutes)` view | anyone | Price, storage fee and total for a pass, and until when the machine is in use. |
-| `buy_pass(machine_id, ssh_pubkey, minutes)` payable | anyone | 1 to 240 minutes. Refused while another pass on the machine is live. Attach the quoted total (`price * minutes` plus a 0.01 NEAR storage fee; extra is returned) and 300 Tgas. Resolves to the signed pass, or refunds everything. |
+| `buy_pass(machine_id, ssh_pubkey, minutes)` payable | anyone | 1 to 240 minutes. Refused while another pass on the machine is live. Attach the quoted total (`price * minutes` plus a 0.01 NEAR storage fee; extra is returned) and at least 100 Tgas (the CLI attaches 300). Resolves to the signed pass, or refunds everything. |
 | `set_host_key(machine_id, host_key)` | owner | Publishes the machine's SSH host key so renters can pin it. |
 | `withdraw(machine_id)` | owner | Pays out the machine's earnings. |
 | `set_machine_active(machine_id, active)` | owner | Pause or resume sales. |
@@ -294,15 +347,15 @@ directions. Everything in this section is implemented in `host/` and
 | The system cannot be changed | The root filesystem is read-only. The only writable places are size-capped, non-executable scratch areas (64 MB home, 32 MB `/tmp`). |
 | The machine cannot be taken down | Limits of 1 CPU, 256 MB memory and 128 processes per renter. A fork bomb and a memory hog were both tested: sshd stayed up and the next login worked. |
 | Nobody overstays | The session is cut at the paid deadline, and a root-owned reaper enforces it even if the renter freezes the in-session timer. |
-| No tunnelling through the machine's sshd | Port, agent and X11 forwarding and tunnels are disabled. |
+| No network abuse from the owner's address | The machine has no outbound network at all: no internet, no DNS, no access to the owner's computer, LAN or other machines. It sits on an internal Docker network behind a small forwarder that only passes SSH in. Port, agent and X11 forwarding and tunnels are disabled too. |
 | Nothing is left behind | When a pass ends, every process is killed and every file the renter wrote is erased before the next renter can log in. |
 
 What a renter can still do, which an owner must plan for:
 
-- **Use the network.** Outbound connections are not restricted, so a renter
-  can reach the internet from the machine's IP address and anything else on
-  the same network. Put the machine on an isolated network or firewall its
-  egress.
+- **Nothing on the network, unless the owner opens it.** A job that needs to
+  download something will not work on the demo host. `docker-compose.yml`
+  says how an owner can attach a machine to an outside network on purpose,
+  and what that exposes.
 - **Use the resources paid for**, up to the limits above, for any purpose.
 - **Read what is world-readable** in the image: the Gatepass scripts, the sshd
   configuration, hardware and kernel details.
@@ -327,7 +380,9 @@ What a renter must accept:
   cannot see whether the machine let you in.
 - **Programs do not survive a disconnect.** Anything still running when your
   connection closes is killed, including `nohup` and background jobs.
-- **Uploaded programs cannot be run on the demo host** (`sh script.sh` works,
+- **The demo machine is small and closed.** It has a shell, the usual Unix
+  tools and Python 3, 1 CPU and 256 MB of memory, and no network. Uploaded
+  binaries cannot be run (`sh script.sh` and `python3 script.py` work,
   `./binary` does not), and there is no sftp or scp.
 
 ## Trust model and limits
@@ -401,10 +456,9 @@ What can still get around it:
 | `contract/` | The Rust contract. `src/cert.rs` is the OpenSSH certificate encoder; `src/lib.rs` is machines, passes, signing and earnings; `src/tests.rs` is the unit tests. |
 | `cli/` | The `gatepass` CLI (TypeScript, run directly by Node). |
 | `agent/` | `agent.ts`: an agent with a wallet and a budget that rents machines by itself. |
-| `host/` | The demo host (two sandboxed containers in `docker-compose.yml`): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals`, `gatepass-reaper` and `gatepass-wipe`. |
+| `host/` | The demo host (two sandboxed machines in `docker-compose.yml`, each behind a `host/gate` forwarder): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals`, `gatepass-reaper` and `gatepass-wipe`. |
 | `dashboard/` | Read-only web page: machines, passes with live countdown, earnings. No wallet needed. |
-| `scripts/` | `demo.sh`, `agent-demo.sh`, `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
-| `spike/` | The first go/no-go experiment: a hand-built certificate signed by Chain Signatures directly from an account, before the contract existed. |
+| `scripts/` | `demo.sh`, `agent-demo.sh`, `host-up.sh` (list a real machine), `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
 
 ## Built with
 

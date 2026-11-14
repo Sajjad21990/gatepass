@@ -10,6 +10,11 @@ RUN apk add --no-cache openssh-server \
  && adduser -D -s /bin/sh renter \
  && echo 'renter:*' | chpasswd -e
 
+# Something useful to rent: Python for the renter's jobs. Kept in its own layer
+# AFTER the one above, so the host key (pinned on-chain by the owner) survives
+# changes here.
+RUN apk add --no-cache python3
+
 COPY sshd_config /etc/ssh/sshd_config
 
 # Session-deadline wrapper: every certificate's force-command points here.

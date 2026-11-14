@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# An AI agent rents a machine by itself. Takes one to two minutes.
+# An AI agent rents a machine by itself. Takes under a minute.
+# A machine has one renter at a time, so a second run within a minute finds the
+# cheap machine still in use: the agent then waits, or picks the other machine.
 #
 #   scripts/agent-demo.sh ["task in plain words"]
 #
@@ -31,7 +33,7 @@ OWNER=$(sed -n 's/^NEAR_ACCOUNT_ID=//p' .env)
 BASE=demo-$(node -e 'console.log(require("crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,8))' "$OWNER")
 SMALL=$BASE
 BIG=$BASE-big
-TASK=${1:-"Find out how many CPU cores and how much memory a rented machine has, and which Linux kernel it runs."}
+TASK=${1:-"How many prime numbers are there below 50000? Work it out by actually running code, not from memory."}
 
 step "1. Two machines for rent, owned by $OWNER"
 LISTED=$($GP machines --json)
@@ -48,7 +50,7 @@ step "2. The agent takes the task"
 if grep -q '^AGENT_LLM_API_KEY=..' .env 2>/dev/null || [ -n "${AGENT_LLM_API_KEY:-}" ]; then
   as_renter node agent/agent.ts "$TASK" --machines "$SMALL,$BIG" --budget 0.1
 else
-  as_renter node agent/agent.ts "$TASK" --machines "$SMALL,$BIG" --budget 0.1 --command 'echo "cores: $(nproc)"; grep MemTotal /proc/meminfo; echo "kernel: $(uname -r)"'
+  as_renter node agent/agent.ts "$TASK" --machines "$SMALL,$BIG" --budget 0.1 --command 'awk "BEGIN { n = 0; for (i = 2; i < 50000; i++) { p = 1; for (j = 2; j * j <= i; j++) if (i % j == 0) { p = 0; break } n += p } print n, \"primes below 50000\" }"'
 fi
 
 step "3. What the chain recorded"

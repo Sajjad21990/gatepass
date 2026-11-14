@@ -18,7 +18,7 @@ const envName = envFlag > -1 ? args.splice(envFlag, 2)[1] : '.env';
 if (!/^\.env(\.[a-z0-9_-]+)?$/.test(envName) || envName === '.env.example') throw new Error('--env must be .env or .env.<name>');
 const ENV_FILE = path.join(HERE, '..', envName);
 const HELPER = 'https://helper.testnet.near.org/account';
-const RPC = 'https://test.rpc.fastnear.com';
+const RPCS = ['https://test.rpc.fastnear.com', 'https://near-testnet.drpc.org', 'https://rpc.testnet.near.org'];
 
 if (fs.existsSync(ENV_FILE)) {
   console.error(`${envName} already exists; not overwriting it.`);
@@ -50,17 +50,17 @@ fs.writeFileSync(
 );
 
 // Confirm the account is really there and funded.
-for (let i = 0; i < 10; i++) {
-  const r = await fetch(RPC, {
+for (let i = 0; i < 12; i++) {
+  const r = await fetch(RPCS[i % RPCS.length], {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'view_account', finality: 'final', account_id: accountId } }),
-  }).then((x) => x.json());
+  }).then((x) => x.json()).catch(() => ({}));
   if (r.result) {
     console.log(`created ${accountId} with ${(Number(BigInt(r.result.amount) / 10n ** 21n) / 1000).toFixed(3)} NEAR; key written to ${envName}`);
     process.exit(0);
   }
   await new Promise((ok) => setTimeout(ok, 1500));
 }
-console.error(`Faucet said OK but ${accountId} is not visible on ${RPC} yet. ${envName} was written.`);
+console.error(`Faucet said OK but ${accountId} is not visible on the RPC yet. ${envName} was written.`);
 process.exit(1);
