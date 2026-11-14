@@ -314,6 +314,15 @@ demo host.
 Not built (they were stretch goals): per-machine sub-accounts, payment in other
 tokens through NEAR Intents, and NFT ownership shares.
 
+### Hackathon tracks
+
+| Track | Why it fits |
+| --- | --- |
+| Agent Economy (`agents`) | An agent with its own wallet finds a machine, pays for compute by the minute and reports what it spent (`agent/agent.ts`). The pass is signed with Chain Signatures. |
+| Autonomous Business (`business`) | A machine earns by itself: the contract sells its time, holds the earnings and pays the owner on withdrawal. No operator approves anything. |
+| AI Security & Defense (`security`) | An agent gets a spending budget enforced in code and time-limited, sandboxed access to one machine, never a long-lived key. |
+| Open Innovation (`open`) | Chain Signatures used as a certificate authority for SSH, which is not what it was built for. |
+
 ### On-chain evidence (testnet)
 
 | What | Link |
