@@ -34,8 +34,13 @@
 
     <section class="authority" aria-labelledby="ca-title">
       <div class="authority-claim">
-        <h2 id="ca-title">Certificate authority</h2>
-        <p>Every machine has its own certificate authority key, so a pass for one machine does not work on any other. Nobody holds the private half of any of them: NEAR Chain Signatures signs a pass only when this contract asks, and it asks only after payment.</p>
+        <h2 id="ca-title">How access is enforced</h2>
+        <ul class="authority-points">
+          <li>Every machine has its own certificate authority key, so a pass for one machine does not work on any other.</li>
+          <li>Nobody holds the private half of any key. NEAR Chain Signatures signs a pass only when this contract asks, and it asks only after payment.</li>
+          <li>A machine has one renter at a time. While a pass is running, nobody else can buy one for it.</li>
+          <li>Owners publish the machine's SSH host key on chain, so the renter connects only to the right machine.</li>
+        </ul>
       </div>
       <dl class="authority-meta">
         <div><dt>MPC contract</dt><dd><a id="ca-mpc" class="account" href="#" target="_blank" rel="noopener noreferrer">–</a></dd></div>

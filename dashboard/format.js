@@ -62,6 +62,20 @@ export function passState(pass, nowMs) {
 }
 
 /**
+ * Whether a machine can be rented at `nowMs`. A machine has one renter at a
+ * time: it is held until busy_until (unix seconds, 0 when free).
+ *   kind        'paused' | 'busy' | 'free'
+ *   secondsLeft whole seconds until the current pass lets go (0 when not held)
+ */
+export function machineAvailability(machine, nowMs) {
+  const leftMs = Number(machine.busy_until) * 1000 - nowMs;
+  const held = Number.isFinite(leftMs) && leftMs > 0;
+  const secondsLeft = held ? Math.ceil(leftMs / 1000) : 0;
+  if (!machine.active) return { kind: 'paused', secondsLeft };
+  return { kind: held ? 'busy' : 'free', secondsLeft };
+}
+
+/**
  * Split an OpenSSH public key line into [head, tail] so the middle can be
  * elided on screen: the tail keeps the end of the key and its comment.
  */
@@ -69,7 +83,7 @@ export function splitKey(line) {
   const text = String(line);
   const lastSpace = text.lastIndexOf(' ');
   const comment = lastSpace > 0 ? text.length - lastSpace : 0;
-  const tail = Math.min(Math.floor(text.length / 2), comment <= 28 ? comment + 6 : 24);
+  const tail = Math.min(Math.floor(text.length / 2), comment + 6);
   return [text.slice(0, text.length - tail), text.slice(text.length - tail)];
 }
 

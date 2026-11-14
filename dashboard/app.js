@@ -1,5 +1,5 @@
 import defaults from './config.js';
-import { formatAgo, formatClock, formatCountdown, formatNear, passState, splitKey, sumYocto } from './format.js';
+import { formatAgo, formatClock, formatCountdown, formatNear, machineAvailability, passState, splitKey, sumYocto } from './format.js';
 
 const REFRESH_MS = 5000;
 const TICK_MS = 250;
@@ -118,6 +118,7 @@ const state = {
   error: null,
   lastOk: 0,
   rendered: { config: '', machines: '', passes: '' },
+  machineViews: [], // [{ m, node, badge, word, time, shown }]
   passViews: [], // [{ pass, node, word, time, unit, fill, kind, text }]
   lastKind: new Map(), // serial -> kind, survives re-renders so the expiry flip can be marked
 };
@@ -140,32 +141,30 @@ function renderConfig(config, machines) {
 
 // ---------- render: machines ----------
 
-/** One machine's own CA key: middle-truncated on screen, copied in full. */
-function machineAuthority(m, caPath) {
-  const wrap = el('div', 'machine-ca');
-  const top = el('div', 'machine-ca-top');
-  top.append(el('p', 'machine-ca-label', 'CA key for this machine only'));
+/** A labelled public key line: middle-truncated on screen, copied in full. */
+function keyBlock({ name, gloss, line, missing, copyLabel, footer }) {
+  const wrap = el('div', 'machine-key');
+  const top = el('div', 'machine-key-top');
+  const label = el('p', 'machine-key-label');
+  label.append(el('strong', '', name), document.createTextNode(` ${gloss}`));
+  top.append(label);
   wrap.append(top);
 
-  const hasKey = typeof m.ca_public_key === 'string' && m.ca_public_key.length > 0;
-  if (hasKey) {
-    const [head, tail] = splitKey(m.ca_public_key);
+  if (typeof line === 'string' && line.length > 0) {
+    const [head, tail] = splitKey(line);
     const key = el('code', 'key');
-    key.title = m.ca_public_key;
+    key.title = line;
     key.append(el('span', 'key-head', head), el('span', 'key-tail', tail));
     const button = el('button', 'copy', 'Copy key');
     button.type = 'button';
-    button.setAttribute('aria-label', `Copy the CA key of ${m.id}`);
-    button.addEventListener('click', () => copyText(button, m.ca_public_key));
+    button.setAttribute('aria-label', copyLabel);
+    button.addEventListener('click', () => copyText(button, line));
     top.append(button);
     wrap.append(key);
   } else {
-    wrap.append(el('p', 'key is-missing', 'Waiting for the MPC to return this key.'));
+    wrap.append(el('p', 'key is-missing', missing));
   }
-
-  const path = el('p', 'machine-ca-path');
-  path.append(document.createTextNode('MPC path '), el('strong', '', `${caPath ?? '–'}/${m.id}`));
-  wrap.append(path);
+  if (footer) wrap.append(footer);
   return wrap;
 }
 
@@ -173,22 +172,52 @@ function renderMachines(machines, caPath) {
   const list = $('machines');
   const note = $('machines-note');
   list.replaceChildren();
+  state.machineViews = [];
   if (machines.length === 0) {
     note.textContent = 'No machines listed yet. When an owner lists one with a price per minute, it shows up here.';
     note.hidden = false;
     return;
   }
   note.hidden = true;
-  for (const m of machines) {
-    const li = el('li', m.active ? 'machine' : 'machine is-paused');
 
+  // Machines in use go first so the one being rented sits beside its pass.
+  // Decided once per data change, so a card never jumps when its timer ends.
+  const now = Date.now();
+  const inUse = (m) => (machineAvailability(m, now).kind === 'busy' ? 0 : 1);
+  const ordered = [...machines].sort((a, b) => inUse(a) - inUse(b));
+
+  for (const m of ordered) {
+    const li = el('li', 'machine');
+
+    const badge = el('span', 'badge');
+    const word = el('span', 'badge-word');
+    const time = el('span', 'badge-time');
+    badge.append(word, time);
     const head = el('div', 'machine-head');
-    head.append(el('h3', 'machine-id', m.id), el('span', m.active ? 'badge is-open' : 'badge is-paused', m.active ? 'Open' : 'Paused'));
+    head.append(el('h3', 'machine-id', m.id), badge);
 
-    const connect = el('code', 'connect', `${m.login_user}@${m.host}:${m.port}`);
-
-    const price = el('span');
+    const price = el('p', 'price');
     price.append(el('strong', 'figure', formatNear(m.price_per_minute)), document.createTextNode(' NEAR per minute'));
+    const top = el('div', 'machine-top');
+    top.append(el('code', 'connect', `${m.login_user}@${m.host}:${m.port}`), price);
+
+    const path = el('p', 'machine-key-path');
+    path.append(document.createTextNode('MPC path '), el('strong', '', `${caPath ?? '–'}/${m.id}`));
+    const caKey = keyBlock({
+      name: 'CA key',
+      gloss: 'trusted by the machine: who may log in',
+      line: m.ca_public_key,
+      missing: 'Waiting for the MPC to return this key.',
+      copyLabel: `Copy the CA key of ${m.id}`,
+      footer: path,
+    });
+    const hostKey = keyBlock({
+      name: 'Host key',
+      gloss: 'trusted by the renter: the right machine',
+      line: m.host_key,
+      missing: 'Not published (renter trusts the first key it sees)',
+      copyLabel: `Copy the host key of ${m.id}`,
+    });
 
     const facts = el('dl', 'facts');
     facts.append(
@@ -198,12 +227,29 @@ function renderMachines(machines, caPath) {
       field('Owner', accountLink(m.owner)),
     );
 
-    const top = el('div', 'machine-top');
-    top.append(connect, el('p', 'price'));
-    top.lastChild.append(price);
-
-    li.append(head, top, machineAuthority(m, caPath), facts);
+    li.append(head, top, caKey, hostKey, facts);
     list.append(li);
+    state.machineViews.push({ m, node: li, badge, word, time, shown: '' });
+  }
+  tickMachines();
+}
+
+const AVAILABILITY = { free: 'Free', busy: 'In use', paused: 'Paused' };
+
+/** Availability ticks on the local clock, so "In use" turns "Free" without waiting for a poll. */
+function tickMachines() {
+  const now = Date.now();
+  for (const v of state.machineViews) {
+    const a = machineAvailability(v.m, now);
+    const countdown = a.secondsLeft > 0 ? formatCountdown(a.secondsLeft) : '';
+    const shown = `${a.kind} ${countdown}`;
+    if (shown === v.shown) continue;
+    v.shown = shown;
+    v.node.className = `machine is-${a.kind}`;
+    v.badge.className = `badge is-${a.kind}`;
+    v.word.textContent = AVAILABILITY[a.kind];
+    v.time.textContent = countdown ? (a.kind === 'paused' ? `last pass ends in ${countdown}` : `free in ${countdown}`) : '';
+    v.time.hidden = !countdown;
   }
 }
 
@@ -380,6 +426,7 @@ async function copyText(button, text) {
 setAccountLink($('contract-link'), cfg.contract);
 setInterval(() => {
   tickPasses();
+  tickMachines();
   if (!state.error && state.lastOk) $('sync').textContent = `Live, read ${formatAgo(Date.now() - state.lastOk)}`;
 }, TICK_MS);
 refresh();

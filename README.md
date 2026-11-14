@@ -48,6 +48,10 @@ expiry time, so an open session cannot outlive the paid minutes. A pass bought
 for one machine is signed with that machine's key only, so it is worthless on
 any other machine.
 
+A machine has one renter at a time: while a pass is live, the contract refuses
+to sell another for that machine. Owners can publish the machine's SSH host key
+on-chain, and the renter's CLI then accepts only that key.
+
 ## Run the demo
 
 You need Docker (running), Node 22.18 or newer, and the OpenSSH client
@@ -175,6 +179,7 @@ bin/gatepass passes gpu-1                     # passes issued, read from the cha
 bin/gatepass host-setup gpu-1                 # that machine's CA key and sshd setup
 bin/gatepass register my-box --host 203.0.113.7 --port 22 --user renter --price 0.05
 bin/gatepass withdraw my-box                  # owner only
+bin/gatepass set-host-key my-box /etc/ssh/ssh_host_ed25519_key.pub   # owner only
 ```
 
 Add `--json` to `machines`, `passes`, `rent`, `register` or `withdraw` for
@@ -192,7 +197,7 @@ Needs Rust 1.95 or newer.
 cd contract && cargo test
 ```
 
-You should see `test result: ok. 30 passed`. The tests cover:
+You should see `test result: ok. 35 passed`. The tests cover:
 
 - the certificate bytes built by the contract match, byte for byte, a
   certificate made by `ssh-keygen` (`body_matches_ssh_keygen_vector`);
@@ -200,6 +205,9 @@ You should see `test result: ok. 30 passed`. The tests cover:
   in for the MPC network);
 - every machine gets its own CA key path, and a pass for one machine is signed
   with that machine's key only;
+- a machine has one renter at a time, and is free again the moment a pass
+  expires or fails;
+- only the owner can publish a machine's host key;
 - underpayment is rejected;
 - a failed signature, one that does not verify, or an unexpected MPC answer
   refunds the buyer;
@@ -257,8 +265,9 @@ be up to 1232 bytes. A Gatepass certificate body is about 350 bytes.
 | Method | Who | What |
 | --- | --- | --- |
 | `register_machine(id, host, port, login_user, price_per_minute)` payable | anyone | Caller becomes the owner. Costs a 0.02 NEAR storage fee. Fetches the machine's own CA key from the MPC. `host` and `port` are display only. |
-| `quote(machine_id, minutes)` view | anyone | Price, storage fee and total for a pass. |
-| `buy_pass(machine_id, ssh_pubkey, minutes)` payable | anyone | 1 to 240 minutes. Attach the quoted total (`price * minutes` plus a 0.01 NEAR storage fee; extra is returned) and 300 Tgas. Resolves to the signed pass, or refunds everything. |
+| `quote(machine_id, minutes)` view | anyone | Price, storage fee and total for a pass, and until when the machine is in use. |
+| `buy_pass(machine_id, ssh_pubkey, minutes)` payable | anyone | 1 to 240 minutes. Refused while another pass on the machine is live. Attach the quoted total (`price * minutes` plus a 0.01 NEAR storage fee; extra is returned) and 300 Tgas. Resolves to the signed pass, or refunds everything. |
+| `set_host_key(machine_id, host_key)` | owner | Publishes the machine's SSH host key so renters can pin it. |
 | `withdraw(machine_id)` | owner | Pays out the machine's earnings. |
 | `set_machine_active(machine_id, active)` | owner | Pause or resume sales. |
 | `settle_pass(serial, signature)` | anyone | Finish a pending pass by hand with the MPC's signature (which is public), if the contract's callback ever failed. Accepted only if it verifies. |
@@ -267,7 +276,8 @@ be up to 1232 bytes. A Gatepass certificate body is about 350 bytes.
 | `get_machine`, `list_machines`, `get_pass`, `list_passes`, `list_recent_passes`, `ca_public_key`, `get_config`, `get_pass_signed_bytes` | views | |
 
 Events are logged as NEP-297 `EVENT_JSON` with standard `gatepass`:
-`ca_key_set`, `machine_registered`, `pass_issued`, `pass_failed`, `withdrawn`.
+`ca_key_set`, `machine_registered`, `host_key_set`, `pass_issued`, `pass_failed`,
+`withdrawn`.
 
 ## Trust model and limits
 
@@ -283,7 +293,12 @@ Stated plainly, so nobody has to find these out the hard way.
 - **A host can take payment and refuse service.** The contract cannot see
   whether the machine let you in. There are no disputes or refunds for a host
   that is down, and `host` and `port` are whatever the owner typed.
-- **The host is not authenticated.** The CLI trusts the host key on first use.
+- **The host is authenticated only if its owner published its host key.** When
+  a machine has a host key on-chain, the CLI accepts only that key. Otherwise
+  it trusts the first key it sees.
+- **A long pass blocks everyone else.** One renter at a time means a 240-minute
+  pass keeps the machine for 240 minutes, used or not. There is no early
+  release and no refund for unused time.
 - **Time starts at purchase, not at login.** Signing takes about 7 seconds of
   the first minute. The certificate is valid from 60 seconds before purchase to
   absorb clock skew, and the host's clock must be right.
