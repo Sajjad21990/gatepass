@@ -21,7 +21,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 unset IFS ENV CDPATH
 
-GRACE=2          # seconds between TERM/HUP and KILL
+GRACE=2          # seconds between TERM/HUP and KILL (leftovers at logout only;
+                 # the deadline itself is STOP then KILL, no grace)
 EXPIRED=124      # exit status when the deadline ends the session
 
 die() { printf 'gatepass: %s\n' "$1" >&2; exit "$2"; }
@@ -159,14 +160,27 @@ reap() {
         sleep 0.1
         r_ticks=$((r_ticks - 1))
     done
-    r_pass=0
-    while sweep KILL; [ -n "$HIT" ] && [ "$r_pass" -lt 25 ]; do
-        r_pass=$((r_pass + 1))
+    kill_all
+}
+
+# kill_all: KILL until a full pass over /proc finds nothing left.
+kill_all() {
+    k_pass=0
+    while sweep KILL; [ -n "$HIT" ] && [ "$k_pass" -lt 25 ]; do
+        k_pass=$((k_pass + 1))
         sleep 0.05
     done
 }
 
-time_is_up() { printf '\r\ngatepass: time is up, session closed\r\n' >&2; }
+# On a terminal the cursor may be anywhere (a prompt, a half-typed line, raw
+# mode), so start on a fresh line there.
+time_is_up() {
+    if [ -t 2 ]; then
+        printf '\r\ngatepass: time is up, session closed\r\n' >&2
+    else
+        printf 'gatepass: time is up, session closed\n' >&2
+    fi
+}
 
 # ---- who we are ---------------------------------------------------------------
 MYUID=$(id -u)
@@ -203,9 +217,16 @@ watchdog() {
         fi
     done
     kill -USR1 $$ 2>/dev/null
-    time_is_up
     EXCLUDE="$$ $SID $w_self"
-    reap "$GRACE"
+    # The deadline is a hard stop, and "time is up" must be the last thing the
+    # renter sees. So: freeze everything first (a stopped process prints
+    # nothing), give sshd a moment to pass on what was already written, say
+    # the message, then KILL. Stopped processes die without running again, so
+    # no shell gets to report "Terminated" and no job prints one more line.
+    sweep STOP
+    sleep 0.1
+    time_is_up
+    kill_all
 }
 
 shell=${SHELL:-/bin/sh}
@@ -223,32 +244,48 @@ trap ':' INT QUIT TSTP TTIN TTOU HUP TERM
 watchdog < /dev/null > /dev/null &
 wd=$!
 
+# From here on this shell's own stderr points at /dev/null; the real one stays
+# open as fd 3 and is what the command gets. Reason: when the command is
+# killed, the shell adds its own "Terminated"/"Killed" line to stderr, and the
+# renter should see nothing after "time is up". (The watchdog was started
+# above and still writes to the real stderr.)
+#
+# The ( exec ... ) form matters: busybox ash applies a command's redirections
+# to itself before it forks, so with a plain `cmd 2>&3` it would be holding the
+# real stderr again exactly while it waits. In a subshell the redirection
+# happens in the child, which then becomes the command.
+exec 3>&2 2> /dev/null
 if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
-    "$shell" -c "$SSH_ORIGINAL_COMMAND"
+    ( exec "$shell" -c "$SSH_ORIGINAL_COMMAND" 2>&3 3>&- )
 else
-    "$shell" -l
+    ( exec "$shell" -l 2>&3 3>&- )
 fi
 status=$?
 
 # From here on nothing of the user's is started, so these can be ignored.
 trap '' INT QUIT TSTP TTIN TTOU HUP TERM
 
-now=$(date +%s)
-if [ "$expired" = 1 ] || [ "$now" -ge "$deadline" ]; then
-    [ "$expired" = 1 ] || time_is_up        # the watchdog never got to say it
-    status=$EXPIRED
-    grace=$((deadline + GRACE - now))
-    [ "$grace" -ge 0 ] || grace=0
-    [ "$grace" -le "$GRACE" ] || grace=$GRACE
-else
-    grace=$GRACE
-fi
-
 # Either way the session is over: stop the watchdog and remove whatever the
 # session left behind (background jobs, nohup, setsid).
-kill -KILL "$wd" 2>/dev/null
-wait "$wd" 2>/dev/null
+now=$(date +%s)
 EXCLUDE="$$ $SID"
-reap "$grace"
+if [ "$expired" = 1 ] || [ "$now" -ge "$deadline" ]; then
+    # Cut off by the deadline: no grace, KILL only (see the watchdog).
+    status=$EXPIRED
+    if [ "$expired" != 1 ]; then
+        # The watchdog never fired (it was stopped or killed): do its job.
+        kill -KILL "$wd" 2>/dev/null
+        sweep STOP
+        time_is_up 2>&3
+    fi
+    kill -KILL "$wd" 2>/dev/null
+    wait "$wd" 2>/dev/null
+    kill_all
+else
+    # Finished in time: leftovers get TERM first, KILL after the grace period.
+    kill -KILL "$wd" 2>/dev/null
+    wait "$wd" 2>/dev/null
+    reap "$GRACE"
+fi
 
 exit "$status"
