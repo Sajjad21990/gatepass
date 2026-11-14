@@ -61,6 +61,18 @@ export function passState(pass, nowMs) {
   };
 }
 
+/**
+ * Split an OpenSSH public key line into [head, tail] so the middle can be
+ * elided on screen: the tail keeps the end of the key and its comment.
+ */
+export function splitKey(line) {
+  const text = String(line);
+  const lastSpace = text.lastIndexOf(' ');
+  const comment = lastSpace > 0 ? text.length - lastSpace : 0;
+  const tail = Math.min(Math.floor(text.length / 2), comment <= 28 ? comment + 6 : 24);
+  return [text.slice(0, text.length - tail), text.slice(text.length - tail)];
+}
+
 /** Unix seconds -> local "11:42:09", with the date in front when it is not today. */
 export function formatClock(unixSeconds, nowMs = Date.now()) {
   const d = new Date(Number(unixSeconds) * 1000);

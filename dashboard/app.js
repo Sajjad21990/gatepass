@@ -1,5 +1,5 @@
 import defaults from './config.js';
-import { formatAgo, formatClock, formatCountdown, formatNear, passState, sumYocto } from './format.js';
+import { formatAgo, formatClock, formatCountdown, formatNear, passState, splitKey, sumYocto } from './format.js';
 
 const REFRESH_MS = 5000;
 const TICK_MS = 250;
@@ -129,25 +129,47 @@ function renderConfig(config, machines) {
   $('total-passes').textContent = String(config.pass_count ?? '–');
   $('total-earned').textContent = formatNear(sumYocto(machines.map((m) => m.total_earned)));
 
-  const key = $('ca-key');
-  const copy = $('ca-copy');
-  if (typeof config.ca_public_key === 'string' && config.ca_public_key) {
-    key.textContent = config.ca_public_key;
-    key.classList.remove('is-missing');
-    copy.hidden = false;
-  } else {
-    key.textContent = 'The contract has not fetched its CA public key yet.';
-    key.classList.add('is-missing');
-    copy.hidden = true;
-  }
+  $('fee-machine').textContent = formatNear(config.machine_storage_fee);
+  $('fee-pass').textContent = formatNear(config.pass_storage_fee);
+  $('fees').hidden = false;
+
   setAccountLink($('ca-mpc'), config.mpc_contract ?? '–');
-  $('ca-path').textContent = String(config.ca_path ?? '–');
+  $('ca-path').textContent = `${config.ca_path ?? '–'}/<machine id>`;
   $('ca-domain').textContent = String(config.ca_domain_id ?? '–');
 }
 
 // ---------- render: machines ----------
 
-function renderMachines(machines) {
+/** One machine's own CA key: middle-truncated on screen, copied in full. */
+function machineAuthority(m, caPath) {
+  const wrap = el('div', 'machine-ca');
+  const top = el('div', 'machine-ca-top');
+  top.append(el('p', 'machine-ca-label', 'CA key for this machine only'));
+  wrap.append(top);
+
+  const hasKey = typeof m.ca_public_key === 'string' && m.ca_public_key.length > 0;
+  if (hasKey) {
+    const [head, tail] = splitKey(m.ca_public_key);
+    const key = el('code', 'key');
+    key.title = m.ca_public_key;
+    key.append(el('span', 'key-head', head), el('span', 'key-tail', tail));
+    const button = el('button', 'copy', 'Copy key');
+    button.type = 'button';
+    button.setAttribute('aria-label', `Copy the CA key of ${m.id}`);
+    button.addEventListener('click', () => copyText(button, m.ca_public_key));
+    top.append(button);
+    wrap.append(key);
+  } else {
+    wrap.append(el('p', 'key is-missing', 'Waiting for the MPC to return this key.'));
+  }
+
+  const path = el('p', 'machine-ca-path');
+  path.append(document.createTextNode('MPC path '), el('strong', '', `${caPath ?? '–'}/${m.id}`));
+  wrap.append(path);
+  return wrap;
+}
+
+function renderMachines(machines, caPath) {
   const list = $('machines');
   const note = $('machines-note');
   list.replaceChildren();
@@ -180,7 +202,7 @@ function renderMachines(machines) {
     top.append(connect, el('p', 'price'));
     top.lastChild.append(price);
 
-    li.append(head, top, facts);
+    li.append(head, top, machineAuthority(m, caPath), facts);
     list.append(li);
   }
 }
@@ -290,9 +312,6 @@ function renderStatus() {
     error.hidden = false;
     if (!state.data) {
       for (const id of ['passes-note', 'machines-note']) $(id).textContent = 'Nothing to show until the RPC answers.';
-      const key = $('ca-key');
-      key.textContent = 'Nothing to show until the RPC answers.';
-      key.classList.add('is-missing');
     }
   } else {
     error.hidden = true;
@@ -307,10 +326,10 @@ function render() {
   if (state.data) {
     const { config, machines, passes } = state.data;
     const cJson = JSON.stringify([config, machines.map((m) => m.total_earned)]);
-    const mJson = JSON.stringify(machines);
+    const mJson = JSON.stringify([machines, config.ca_path]);
     const pJson = JSON.stringify(passes);
     if (cJson !== state.rendered.config) renderConfig(config, machines);
-    if (mJson !== state.rendered.machines) renderMachines(machines);
+    if (mJson !== state.rendered.machines) renderMachines(machines, config.ca_path);
     if (pJson !== state.rendered.passes) renderPasses(passes);
     state.rendered = { config: cJson, machines: mJson, passes: pJson };
   }
@@ -337,27 +356,28 @@ async function refresh() {
   setTimeout(refresh, REFRESH_MS);
 }
 
-async function copyKey() {
-  const button = $('ca-copy');
-  const text = $('ca-key').textContent;
+async function copyText(button, text) {
   let ok = false;
   try {
     await navigator.clipboard.writeText(text);
     ok = true;
   } catch {
-    const range = document.createRange();
-    range.selectNodeContents($('ca-key'));
-    const sel = getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    // No clipboard permission (or not a secure context): copy through a throwaway field.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.append(area);
+    area.select();
     try { ok = document.execCommand('copy'); } catch { ok = false; }
+    area.remove();
+    button.focus();
   }
-  button.textContent = ok ? 'Copied' : 'Select and copy';
+  button.textContent = ok ? 'Copied' : 'Copy failed';
   setTimeout(() => { button.textContent = 'Copy key'; }, 1600);
 }
 
 setAccountLink($('contract-link'), cfg.contract);
-$('ca-copy').addEventListener('click', copyKey);
 setInterval(() => {
   tickPasses();
   if (!state.error && state.lastOk) $('sync').textContent = `Live, read ${formatAgo(Date.now() - state.lastOk)}`;
