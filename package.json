@@ -9,7 +9,11 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "deploy": "node scripts/deploy.mjs"
+    "demo": "scripts/demo.sh",
+    "dashboard": "node scripts/dashboard.ts",
+    "deploy": "node scripts/deploy.ts",
+    "gatepass": "node cli/gatepass.ts",
+    "test": "cd contract && cargo test"
   },
   "dependencies": {
     "near-api-js": "5.1.1"
