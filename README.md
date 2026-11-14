@@ -5,6 +5,8 @@ No accounts, no shared passwords, and no person holds the signing key.
 
 Built at NEAR Hackathon. Runs on NEAR testnet.
 
+Demo video (2 minutes): https://x.com/Sajjad21990/status/2121579037571371429
+
 ## The problem
 
 Giving someone access to a server means sharing a key or a password. Keys get
