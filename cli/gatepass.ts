@@ -309,6 +309,15 @@ async function withdraw() {
   console.log(`  tx: ${r.explorerUrl}`);
 }
 
+/** Owner: stop or resume selling passes for a machine. */
+async function setActive(active: boolean) {
+  const id = rest[0];
+  if (!id) throw new Error(`usage: gatepass ${active ? 'resume' : 'pause'} <machine>`);
+  const r = await call(await signer(), contractId(), 'set_machine_active', { machine_id: id, active });
+  console.log(`${id} is now ${active ? 'open for rent' : 'paused'}`);
+  console.log(`  tx: ${r.explorerUrl}`);
+}
+
 /** Owner: publish the machine's SSH host key so renters can pin it. */
 async function setHostKey() {
   const [id, ...keyParts] = rest;
@@ -342,6 +351,7 @@ function help() {
   gatepass host-setup <machine> [--write F] the machine's CA key and sshd lines
   gatepass register <id> --host H --port P --user U --price <NEAR/min>
   gatepass withdraw <machine>               owner: collect earnings
+  gatepass pause <machine> | resume <machine>   owner: stop or resume selling passes
   gatepass set-host-key <machine> <key>     owner: publish the machine's SSH host key
   gatepass refresh-ca <machine>             re-read a machine's CA key from the MPC
 
@@ -349,7 +359,7 @@ contract: ${s.contractId ?? '(set GATEPASS_CONTRACT in .env)'}   network: ${s.ne
 }
 
 const commands: Record<string, () => Promise<void> | void> = {
-  machines, rent, ssh, passes, 'host-setup': hostSetup, register, withdraw, 'set-host-key': setHostKey, 'refresh-ca': refreshCa, help,
+  machines, rent, ssh, passes, 'host-setup': hostSetup, register, withdraw, pause: () => setActive(false), resume: () => setActive(true), 'set-host-key': setHostKey, 'refresh-ca': refreshCa, help,
 };
 
 try {

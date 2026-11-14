@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gatepass</title>
+  <meta name="description" content="Live view of the Gatepass contract on NEAR testnet: machines, passes and the certificate authority.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232743e8'/%3E%3Crect x='6' y='20' width='20' height='5' fill='%23f6f9f6'/%3E%3Crect x='6' y='8' width='12' height='5' fill='%23f6f9f6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <div class="masthead-id">
+        <h1 class="wordmark">Gatepass</h1>
+        <p class="pitch">Pay on NEAR, get an SSH pass into a machine for exactly the minutes you paid for.</p>
+        <p class="source">
+          <span>Contract <a id="contract-link" class="account" href="#" target="_blank" rel="noopener noreferrer"></a></span>
+          <span class="network">testnet</span>
+          <span id="sync" class="sync" data-state="loading">Reading the contract</span>
+        </p>
+      </div>
+      <div class="masthead-figures">
+        <dl class="totals" aria-label="Totals">
+          <div class="total"><dd id="total-machines">–</dd><dt>machines</dt></div>
+          <div class="total"><dd id="total-passes">–</dd><dt>passes issued</dt></div>
+          <div class="total"><dd><span id="total-earned">–</span> <span class="unit">NEAR</span></dd><dt>total earned</dt></div>
+        </dl>
+        <p id="fees" class="fees" hidden>Storage fees, kept by the contract: <strong id="fee-machine">–</strong> NEAR once to list a machine, <strong id="fee-pass">–</strong> NEAR added to every pass.</p>
+      </div>
+    </header>
+
+    <p id="error" class="error" role="alert" hidden></p>
+
+    <section class="authority" aria-labelledby="ca-title">
+      <div class="authority-claim">
+        <h2 id="ca-title">How access is enforced</h2>
+        <ul class="authority-points">
+          <li>Every machine has its own certificate authority key, so a pass for one machine does not work on any other.</li>
+          <li>Nobody holds the private half of any key. NEAR Chain Signatures signs a pass only when this contract asks, and it asks only after payment.</li>
+          <li>A machine has one renter at a time. While a pass is running, nobody else can buy one for it.</li>
+          <li>Owners publish the machine's SSH host key on chain, so the renter connects only to the right machine.</li>
+        </ul>
+      </div>
+      <dl class="authority-meta">
+        <div><dt>MPC contract</dt><dd><a id="ca-mpc" class="account" href="#" target="_blank" rel="noopener noreferrer">–</a></dd></div>
+        <div><dt>Key path</dt><dd id="ca-path">–</dd></div>
+        <div><dt>Domain</dt><dd id="ca-domain">–</dd></div>
+      </dl>
+    </section>
+
+    <main class="board">
+      <section class="passes" aria-labelledby="passes-title">
+        <h2 id="passes-title">Recent passes</h2>
+        <ol id="passes" class="pass-list"></ol>
+        <p id="passes-note" class="note">Reading the contract</p>
+      </section>
+
+      <section class="machines" aria-labelledby="machines-title">
+        <h2 id="machines-title">Machines</h2>
+        <ul id="machines" class="machine-list"></ul>
+        <p id="machines-note" class="note">Reading the contract</p>
+      </section>
+    </main>
+  </div>
+
+  <noscript><p class="error">This page reads the contract with JavaScript. Turn it on to see the dashboard.</p></noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

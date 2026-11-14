@@ -1,70 +1,1268 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Gatepass</title>
-  <meta name="description" content="Live view of the Gatepass contract on NEAR testnet: machines, passes and the certificate authority.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232743e8'/%3E%3Crect x='6' y='20' width='20' height='5' fill='%23f6f9f6'/%3E%3Crect x='6' y='8' width='12' height='5' fill='%23f6f9f6'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gatepass: rent a computer by the minute</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@500;600;700;800&family=Funnel+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="devices.css">
+<style>
+:root{
+  --petrol:#0E4A5A;       /* the room: stage, primary buttons on light */
+  --petrol-deep:#0A3946;  /* the desk surface */
+  --ink:#0B2A33;          /* text on light */
+  --ink-2:#4A6168;        /* secondary text on light */
+  --porcelain:#EEF2F1;    /* page */
+  --white:#FBFCFB;        /* panels, labels */
+  --line:#C9D3D4;
+  --alu:#CCD3D6;          /* laptop and dial metal */
+  --alu-hi:#EEF1F2;
+  --alu-lo:#8D999E;
+  --light:#FFF1C7;        /* a lit screen: "on", "yours", the main action on the stage */
+  --time:#F26A1B;         /* time only: dial hand, wound arc, last minute */
+  --time-ink:#A8400A;     /* time colour as text on light */
+  --free:#3FD98A;         /* status lights */
+  --busy:#FFB23E;
+  --off:#7F8E93;
+  --mist:#BCD0D4;         /* secondary text on the stage */
+  --display:"Funnel Display","Avenir Next","Segoe UI",Helvetica,Arial,sans-serif;
+  --body:"Funnel Sans","Avenir Next","Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --k:1;                  /* scale of the laptop drawing */
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--porcelain);color:var(--ink);font:400 17px/1.5 var(--body);padding-bottom:88px}
+h1,h2,h3,p,dl,dd,ol,ul,figure{margin:0;padding:0}
+ol,ul{list-style:none}
+a{color:inherit}
+button{font:inherit;color:inherit;cursor:pointer}
+[hidden]{display:none!important}
+:focus-visible{outline:3px solid var(--petrol);outline-offset:3px;border-radius:6px}
+.stage :focus-visible{outline-color:var(--light)}
+.wrap{max-width:1376px;margin:0 auto;padding:0 32px}
+code,.cmd{font-family:var(--mono)}
+code{font-size:.86em}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+/* ---------- shell ---------- */
+.top{background:var(--white);border-bottom:1px solid var(--line)}
+.top__in{display:flex;align-items:center;gap:32px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font:700 24px/1 var(--display);background:none;border:0;padding:4px 0;color:var(--ink)}
+.brand svg{width:34px;height:26px}
+.nav{display:flex;gap:2px;flex:1}
+.nav button{background:none;border:0;padding:8px 14px;font-weight:500;color:var(--ink-2);border-radius:6px;position:relative;white-space:nowrap}
+.nav button:hover{color:var(--ink)}
+.nav button[aria-current="page"]{color:var(--ink);font-weight:700}
+.nav button[aria-current="page"]::after{content:"";position:absolute;left:14px;right:14px;bottom:-13px;height:3px;background:var(--petrol)}
+.net{font-size:15px;color:var(--ink-2);white-space:nowrap}
+.wallet__acct{display:none;font-weight:600;font-size:15px;border:1.5px solid var(--line);border-radius:8px;padding:7px 12px;background:#fff;white-space:nowrap}
+.wallet__acct span{font-weight:400;color:var(--ink-2);margin-left:8px}
+body.is-connected .wallet__acct{display:block}
+body.is-connected .wallet__btn{display:none}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 22px;border-radius:8px;border:1.5px solid var(--petrol);background:var(--petrol);color:#fff;font-weight:600;font-size:17px;white-space:nowrap;text-decoration:none}
+.btn:hover{background:#0B3D4B}
+.btn--quiet{background:transparent;color:var(--petrol)}
+.btn--quiet:hover{background:rgba(14,74,90,.08)}
+.btn--small{min-height:40px;padding:0 16px;font-size:16px}
+.btn[disabled]{background:transparent;border-color:var(--line);color:var(--ink-2);cursor:default}
+.stage .btn{background:var(--light);border-color:var(--light);color:var(--ink)}
+.stage .btn:hover{background:#fff}
+.stage .btn--quiet{background:transparent;border-color:rgba(255,255,255,.45);color:#fff}
+.stage .btn--quiet:hover{background:rgba(255,255,255,.1)}
+.stage .btn--big{min-height:56px;font-size:19px;padding:0 28px}
+.link{background:none;border:0;padding:0;text-decoration:underline;text-underline-offset:3px;font-weight:500}
+
+/* ---------- the stage: one laptop, one dial ---------- */
+.stage{color:#F3F7F6;background:
+  radial-gradient(900px 420px at 58% 108%,rgba(255,255,255,.07),transparent 70%),
+  linear-gradient(180deg,var(--petrol) 0,var(--petrol) 60%,var(--petrol-deep) 60.4%,#0C4250 100%);
+  overflow:hidden}
+.stage__in{display:grid;grid-template-columns:minmax(0,1fr) auto 254px;column-gap:24px;align-items:center;min-height:556px;padding-top:26px;padding-bottom:26px}
+.say{max-width:430px}
+.h1{font:700 60px/1.02 var(--display);letter-spacing:-.022em}
+.h1--sm{font-size:42px;line-height:1.06;letter-spacing:-.018em}
+.lede{font-size:19.5px;line-height:1.45;color:var(--mist);margin-top:18px}
+.lede b{color:#fff;font-weight:600}
+.say__btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
+.steps{margin-top:26px;display:grid;gap:9px;counter-reset:s}
+.steps li{display:flex;gap:12px;align-items:baseline;font-size:17px;color:#E5EEEE}
+.steps li::before{counter-increment:s;content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);font:700 14px/21px var(--display);text-align:center}
+
+/* price sum */
+.sum{margin-top:22px;border-top:1px solid rgba(255,255,255,.25)}
+.sum__row{display:flex;justify-content:space-between;gap:16px;align-items:baseline;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.25)}
+.sum__row small{display:block;font-size:14.5px;color:var(--mist)}
+.sum__row b{font:600 19px/1.2 var(--display);white-space:nowrap}
+.sum__total{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 18px}
+.sum__total > span{font-weight:600;font-size:18px}
+.sum__total b{font:700 40px/1 var(--display);letter-spacing:-.02em;color:var(--light)}
+.sum__total b small{font-size:19px;font-weight:600;margin-left:6px;letter-spacing:0}
+.note{font-size:15px;line-height:1.45;color:var(--mist);margin-top:14px}
+.note b{color:#fff;font-weight:600}
+
+/* paying: three lines */
+.prog{margin-top:22px;display:grid;gap:4px}
+.prog li{display:grid;grid-template-columns:30px 1fr;gap:12px;padding:10px 0;opacity:.5;transition:opacity .3s}
+.prog li.is-now,.prog li.is-done{opacity:1}
+.prog__dot{width:28px;height:28px;border-radius:50%;border:1.5px solid rgba(255,255,255,.55);font:700 15px/25px var(--display);text-align:center;position:relative}
+.prog li.is-now .prog__dot{border-color:var(--light);color:var(--light)}
+.prog li.is-now .prog__dot::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid transparent;border-top-color:var(--light);animation:spin 1s linear infinite}
+.prog li.is-done .prog__dot{background:var(--light);border-color:var(--light);color:transparent}
+.prog li.is-done .prog__dot::before{content:"";position:absolute;left:8px;top:6px;width:9px;height:5px;border-left:2.5px solid var(--ink);border-bottom:2.5px solid var(--ink);transform:rotate(-45deg)}
+.prog h3{font:600 18.5px/1.25 var(--display)}
+.prog p{font-size:15.5px;line-height:1.42;color:var(--mist);margin-top:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.refund{margin-top:12px;padding:12px 14px;border:1px dashed rgba(255,255,255,.45);border-radius:8px;font-size:15.5px;line-height:1.42;color:#E5EEEE}
+
+/* active: connect */
+.connect{margin-top:20px;display:grid;gap:16px;counter-reset:c}
+.connect li{display:grid;grid-template-columns:30px 1fr;gap:12px}
+.connect li::before{counter-increment:c;content:counter(c);width:28px;height:28px;border-radius:50%;border:1.5px solid rgba(255,255,255,.55);font:700 15px/25px var(--display);text-align:center}
+.connect h3{font:600 18.5px/1.25 var(--display)}
+.connect p{font-size:15.5px;line-height:1.42;color:var(--mist);margin:3px 0 10px}
+.cmd{font-size:13.5px;line-height:1.55;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:10px 12px;margin:4px 0 10px;color:#F3F7F6;overflow-wrap:anywhere}
+.cmd span{white-space:nowrap}
+.warn{margin-top:16px;padding:10px 14px;border-radius:8px;background:var(--time);color:#1B0A00;font-weight:600;font-size:15.5px;line-height:1.4}
+
+/* ---------- the laptop ---------- */
+.rigbox{--k:.95;width:calc(620px*var(--k));height:calc(500px*var(--k));justify-self:center;position:relative}
+.rig{position:absolute;left:0;top:0;width:620px;height:500px;transform:scale(var(--k));transform-origin:0 0;perspective:2600px;perspective-origin:46% 30%}
+.lt{position:absolute;left:62px;top:234px;width:440px;height:300px;transform-style:preserve-3d;transform:rotateX(66deg) rotateZ(-21deg)}
+.lt div,.lt i{position:absolute}
+.lt__shadow{inset:6px -14px -16px 2px;border-radius:40px;background:rgba(2,22,28,.62);filter:blur(16px);transform:translateZ(-1px)}
+.lt__spill{left:-60px;right:-40px;top:20px;height:440px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,241,199,.5),rgba(255,241,199,0));transform:translateZ(-.5px);opacity:0;transition:opacity 1.2s}
+.lt__b{inset:calc(var(--in,0)*1px);border-radius:17px;transform:translateZ(calc(var(--i)*1px));background:linear-gradient(90deg,#9FAAAF 0,#DDE2E4 22%,#B3BCC0 60%,#87949A 100%)}
+.lt__deck{inset:0;border-radius:17px;transform:translateZ(10px);background:linear-gradient(108deg,#E2E6E8 0,#CBD2D5 55%,#B9C2C6 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.65)}
+.lt__hinge{left:54px;right:54px;top:3px;height:11px;border-radius:6px;background:linear-gradient(180deg,#1A2529,#34444B)}
+.lt__keys{left:33px;top:30px;width:374px;height:132px;border-radius:4px;
+  background:repeating-linear-gradient(90deg,transparent 0 26px,#17232A 26px 29px),repeating-linear-gradient(180deg,transparent 0 24px,#17232A 24px 27px),linear-gradient(180deg,#3A4B52,#2F3F46);
+  box-shadow:0 0 0 5px #17232A}
+.lt__space{left:120px;top:138px;width:141px;height:24px;background:#34454C}
+.lt__pad{left:147px;top:178px;width:146px;height:98px;border-radius:9px;background:linear-gradient(120deg,#D5DBDD,#C3CACE);box-shadow:inset 0 0 0 1px rgba(90,105,112,.5)}
+.lt__wash{inset:0;border-radius:17px;background:linear-gradient(180deg,rgba(255,241,199,.75) 0,rgba(255,241,199,.18) 55%,rgba(255,241,199,0) 85%);mix-blend-mode:soft-light;opacity:0;transition:opacity 1.2s}
+.lt__lid{inset:0;transform-origin:50% 0;transform:translateZ(11px) rotateX(var(--a,0deg));transform-style:preserve-3d;transition:transform 1.25s cubic-bezier(.3,.05,.2,1)}
+.lt__l{inset:0;border-radius:17px;transform:translateZ(calc(var(--i)*1px));background:linear-gradient(90deg,#9FAAAF 0,#DDE2E4 22%,#B3BCC0 60%,#87949A 100%)}
+.lt__shell{inset:0;border-radius:17px;transform:translateZ(5px);backface-visibility:hidden;
+  background:linear-gradient(112deg,#EDF0F1 0,#D3D9DC 38%,#C2CACD 62%,#D9DEE0 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.7)}
+.lt__mark{left:50%;top:50%;width:46px;height:34px;margin:-17px 0 0 -23px;opacity:.55}
+.lt__led{left:50%;bottom:16px;width:30px;height:5px;margin-left:-15px;border-radius:3px;background:#5F6D72}
+.lt__dim{inset:0;border-radius:17px;background:#062730;opacity:0;transition:opacity .8s}
+body[data-state="expired"] .lt__dim{opacity:.3}
+body[data-state="expired"] .stage{background:
+  radial-gradient(900px 420px at 58% 108%,rgba(255,255,255,.04),transparent 70%),
+  linear-gradient(180deg,#0B3F4D 0,#0B3F4D 60%,#083039 60.4%,#0A3742 100%)}
+.rig[data-led="free"] .lt__led{background:var(--free);box-shadow:0 0 10px 2px rgba(63,217,138,.8);animation:breathe 3.6s ease-in-out infinite}
+.rig[data-led="busy"] .lt__led{background:var(--busy);box-shadow:0 0 10px 2px rgba(255,178,62,.8)}
+@keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}
+.lt__screen{inset:0;border-radius:17px;transform:rotateX(180deg) translateZ(.6px);backface-visibility:hidden;background:#111A1E;box-shadow:inset 0 0 0 1px #2B383E}
+.lt__cam{left:50%;top:4px;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:#2E3D44}
+.display{inset:13px 10px 15px;border-radius:5px;overflow:hidden;background:linear-gradient(135deg,#0A1114 0,#0A1114 46%,#121C20 46.3%,#0D1518 100%);color:#C9D6D9;transition:background-color .6s,box-shadow .9s}
+.rig.is-lit .display{background:linear-gradient(180deg,#FFF7DE,#FFEDB8);color:var(--ink);box-shadow:0 0 60px 6px rgba(255,241,199,.45)}
+.display::after{content:"";position:absolute;inset:0;background:linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,255,255,.11) 58.2%,rgba(255,255,255,.02) 100%);pointer-events:none}
+.rig.is-lit .lt__spill,.rig.is-lit .lt__wash{opacity:1}
+.display .scr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:14px;opacity:0;transition:opacity .4s}
+.display .scr *{position:static}
+.display .scr .scr__bar{position:relative}
+.display .scr .scr__bar i{position:absolute}
+.rig[data-scr="boot"] .scr--boot,.rig[data-scr="ready"] .scr--ready,.rig[data-scr="live"] .scr--live{opacity:1}
+.scr--boot p{font:500 21px/1.3 var(--display)}
+.scr--boot small{display:block;font:400 15px/1.3 var(--body);color:#8FA3A8;margin-top:6px}
+.scr--ready b{font:700 44px/1.05 var(--display);letter-spacing:-.02em}
+.scr--ready p{font-size:19px;margin-top:8px}
+.scr__top{font:500 21px/1.2 var(--display)}
+.scr__top b{font-weight:700}
+.scr__count{font:700 128px/.95 var(--display);letter-spacing:-.03em;margin:6px 0 10px;display:flex;justify-content:center}
+.scr__count span{display:inline-block;width:.6em;text-align:center}
+.scr__count span.colon{width:.3em}
+.rig.is-last .scr__count{color:#C8480A}
+.scr__bar{width:78%;height:7px;border-radius:4px;background:rgba(11,42,51,.16);overflow:hidden}
+.scr__bar i{inset:0;transform-origin:0 50%;background:var(--ink);border-radius:4px;transition:transform 1s linear}
+.rig.is-last .scr__bar i{background:#C8480A}
+.scr__bot{font-size:15.5px;margin-top:10px;color:#3C555C}
+
+/* a note pinned to the lid while it is shut */
+.callout{position:absolute;left:150px;top:96px;width:290px;font-size:15.5px;line-height:1.4;color:var(--mist);padding-bottom:10px;transition:opacity .3s}
+.callout b{display:block;color:#fff;font:600 19px/1.25 var(--display);margin-bottom:2px}
+.callout::after{content:"";position:absolute;left:14px;top:100%;height:70px;border-left:1.5px solid rgba(255,255,255,.5)}
+.callout::before{content:"";position:absolute;left:10.5px;top:calc(100% + 68px);width:8px;height:8px;border-radius:50%;background:#fff}
+.callout[hidden]{display:block!important;opacity:0;transition:none}
+
+/* the shop card that says what this machine is */
+.tag{position:absolute;right:-4px;bottom:-12px;width:218px;background:var(--white);color:var(--ink);border-radius:5px;padding:11px 14px 12px;box-shadow:0 14px 22px -10px rgba(2,22,28,.75),0 1px 0 rgba(255,255,255,.6) inset;font-size:14.5px;line-height:1.35}
+.tag::after{content:"";position:absolute;left:8px;right:8px;bottom:-5px;height:5px;background:#B7C2C5;border-radius:0 0 4px 4px}
+.tag__name{font:700 21px/1.1 var(--display)}
+.tag__spec{color:var(--ink-2);margin-top:2px}
+.tag__price{margin-top:7px;padding-top:7px;border-top:1px solid var(--line);font-weight:600;font-size:16px}
+.tag__price span{font-weight:400;color:var(--ink-2)}
+.status{display:flex;align-items:center;gap:8px;font-weight:600}
+.status::before{content:"";flex:none;width:10px;height:10px;border-radius:50%;background:var(--free);box-shadow:0 0 0 3px rgba(63,217,138,.25)}
+.status--busy::before{background:var(--busy);box-shadow:0 0 0 3px rgba(255,178,62,.3)}
+.status--off::before{background:var(--off);box-shadow:none}
+.status small{font-weight:400;color:var(--ink-2);font-size:14px;display:block}
+.tag .status{margin-top:6px;font-size:15px}
+
+/* ---------- the time dial ---------- */
+.timer{justify-self:center;width:254px;text-align:center;align-self:end}
+.dial{width:248px;height:248px;margin:0 auto;border-radius:50%;position:relative;touch-action:none;cursor:grab;display:block}
+.dial[aria-disabled="true"]{cursor:default}
+.dial svg{display:block;width:100%;height:100%;overflow:visible}
+.dial text{font-family:var(--display)}
+.dial__hand{transform-origin:150px 150px;transition:transform .5s cubic-bezier(.3,.6,.3,1)}
+.dial__arc{transition:stroke-dashoffset .5s cubic-bezier(.3,.6,.3,1)}
+.dial.is-drag .dial__hand,.dial.is-drag .dial__arc{transition:none}
+.dial.is-run .dial__hand,.dial.is-run .dial__arc{transition-duration:1s;transition-timing-function:linear}
+.dial__flag{opacity:0;transform:translateY(14px);transition:opacity .3s,transform .4s}
+.dial.is-up .dial__flag{opacity:1;transform:none}
+.timer__foot{width:150px;height:14px;margin:-4px auto 0;border-radius:50%;background:rgba(2,22,28,.55);filter:blur(7px)}
+.timer__cap{margin-top:8px;font-size:15.5px;line-height:1.35;color:var(--mist);min-height:63px}
+.timer__cap b{color:#fff;font-weight:600}
+.timer__ctl{margin:6px -8px 0;display:flex;justify-content:center;gap:5px}
+.timer__ctl button{min-width:38px;height:38px;border-radius:19px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:#fff;font-weight:600;font-size:15px;padding:0 8px}
+.timer__ctl button:hover{background:rgba(255,255,255,.12)}
+.timer__ctl button[aria-pressed="true"]{background:var(--light);border-color:var(--light);color:var(--ink)}
+.timer__ctl .pm{font-size:21px;line-height:1;width:38px;padding:0;border-color:#fff}
+
+/* ---------- below the stage ---------- */
+.below{padding:44px 0 56px}
+.h2{font:700 30px/1.15 var(--display);letter-spacing:-.012em}
+.h2 small{display:block;font:400 17px/1.4 var(--body);color:var(--ink-2);letter-spacing:0;margin-top:6px}
+.shelf{margin-top:26px;display:grid;grid-template-columns:repeat(3,1fr);position:relative}
+.bay{padding:0 28px 0 0}
+.bay + .bay{padding-left:28px;border-left:1px solid var(--line)}
+.bay__dev{height:142px;display:flex;align-items:flex-end;border-bottom:6px solid #B5C0C3;box-shadow:0 7px 0 -1px #D9E0E1;margin:0 -28px 0 0;padding-left:6px}
+.bay + .bay .bay__dev{margin-left:-29px;padding-left:34px}
+.bay__dev svg{width:196px;height:137px;display:block;margin-bottom:-1px}
+.bay__name{font:700 25px/1.1 var(--display);margin-top:24px}
+.bay__spec{color:var(--ink-2);font-size:15.5px;margin-top:3px}
+.bay__row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-top:14px;min-height:50px}
+.bay__price b{font:700 21px/1.1 var(--display)}
+.bay__price span{color:var(--ink-2);font-size:15.5px}
+.bay__owner{font-size:14.5px;color:var(--ink-2);display:block;margin-top:2px}
+.bay .btn{margin-top:14px}
+.bay.is-on .bay__name::after{content:"On the desk above";font:600 14px/1 var(--body);background:var(--petrol);color:#fff;border-radius:4px;padding:4px 8px;margin-left:10px;vertical-align:4px;white-space:nowrap}
+
+.trust{margin-top:56px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px 48px}
+.trust h2{grid-column:1/-1}
+.trust h3,.facts h3{font:700 20px/1.2 var(--display);margin-bottom:6px}
+.trust p,.facts p{color:var(--ink-2);font-size:16.5px;max-width:38ch}
+.tech{margin-top:30px;border-top:1px solid var(--line);padding-top:16px;font-size:16px}
+.tech summary{cursor:pointer;font-weight:600;width:max-content}
+.tech p{margin-top:10px;color:var(--ink-2);max-width:78ch}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:20px 48px}
+.receipt{margin-top:32px;padding-top:18px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 40px;font-size:16px;color:var(--ink-2)}
+.receipt b{color:var(--ink);font-weight:600}
+
+table{border-collapse:collapse;width:100%;font-size:16.5px}
+th{text-align:left;font-weight:500;color:var(--ink-2);font-size:15px;padding:0 16px 8px 0;border-bottom:1px solid var(--line)}
+td{padding:13px 16px 13px 0;border-bottom:1px solid var(--line);vertical-align:middle}
+td b{font-weight:700}
+.scrollx{overflow-x:auto}
+.history{max-width:860px}
+.history table{margin-top:18px}
+.pill{display:inline-block;font-size:14.5px;font-weight:600;padding:2px 9px;border-radius:4px;background:#DDE4E5;color:var(--ink)}
+.pill--refund{background:#FBE3D2;color:#7A2E06}
+
+/* ---------- owners / agents (lighter pages) ---------- */
+.page{padding:52px 0 64px}
+.page .h1{color:var(--ink);font-size:50px;max-width:16ch}
+.page .lede{color:var(--ink-2);max-width:60ch}
+.two{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:56px;margin-top:38px;align-items:start}
+.panel{background:var(--white);border:1px solid var(--line);border-radius:10px;padding:26px 28px}
+.form{display:grid;gap:16px;margin-top:18px}
+.form label{display:grid;gap:6px;font-weight:600;font-size:16px}
+.form input{font:inherit;font-weight:400;padding:11px 12px;border:1.5px solid #9FB0B4;border-radius:8px;background:#fff;color:var(--ink);width:100%}
+.form label span{font-weight:400;font-size:14.5px;color:var(--ink-2)}
+.form__fee{display:flex;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.earn{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;margin-bottom:22px}
+.earn__n{font:700 56px/1 var(--display);letter-spacing:-.02em;margin-top:8px}
+.earn__n small{font-size:21px;font-weight:600;margin-left:8px;letter-spacing:0}
+.mine td:first-child{display:flex;align-items:center;gap:12px}
+.mine svg{width:54px;height:38px;flex:none}
+.cannot{margin-top:30px}
+.cannot ul{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px 28px}
+.cannot li{display:flex;gap:10px;align-items:center;font-size:16.5px}
+.cannot li::before{content:"";flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--time-ink);background:linear-gradient(45deg,transparent 43%,var(--time-ink) 43% 57%,transparent 57%)}
+.budget{margin-top:30px;max-width:420px}
+.budget__bar{height:12px;border-radius:6px;background:#D5DDDE;margin-top:12px;overflow:hidden}
+.budget__bar i{display:block;height:100%;width:20%;background:var(--petrol)}
+.budget__row{display:flex;justify-content:space-between;margin-top:8px;font-size:16px;color:var(--ink-2)}
+.budget__row b{color:var(--ink)}
+.lidlog{margin-top:34px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;max-width:460px}
+.lidlog li{font-size:15px;line-height:1.35;color:var(--ink-2)}
+.lidlog svg{display:block;width:64px;height:44px;margin-bottom:8px}
+.lidlog b{display:block;color:var(--ink);font-weight:600}
+.alt{margin-top:26px;font-size:16px;color:var(--ink-2);max-width:46ch}
+.run{background:#0C3F4D;color:#EAF1F1;border-radius:12px;padding:26px 30px 24px;position:relative}
+.run::before{content:"";position:absolute;left:0;right:0;top:0;height:10px;border-radius:12px 12px 0 0;background:#0A3440}
+.run__head{display:flex;justify-content:space-between;font-size:15px;color:var(--mist);margin-top:6px}
+.run__task{font:600 23px/1.25 var(--display);margin-top:10px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.2)}
+.run__task span{display:block;font:400 15px/1.3 var(--body);color:var(--mist);margin-bottom:4px}
+.log li{display:grid;grid-template-columns:76px 1fr auto;gap:14px;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.14);align-items:baseline}
+.log time{font-size:15px;color:var(--mist);font-variant-numeric:tabular-nums}
+.log b{font-weight:600;display:block}
+.log small{font-size:15px;color:var(--mist);display:block}
+.log__amt{font:600 17px/1 var(--display);white-space:nowrap}
+.answer{font:700 46px/1 var(--display);color:var(--light);letter-spacing:-.02em}
+.run__sum{display:flex;justify-content:space-between;align-items:baseline;padding-top:16px}
+.run__sum b{font:700 26px/1 var(--display);color:var(--light)}
+
+/* ---------- mockup switcher: not part of the design ---------- */
+.mock{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:4px;max-width:calc(100vw - 16px);overflow-x:auto;
+  background:#fff;color:#222;border:1.5px dashed #777;border-radius:8px;padding:6px 8px;font:500 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.mock__label{padding:0 8px 0 4px;color:#555;white-space:nowrap}
+.mock button{border:0;background:none;padding:8px 10px;border-radius:5px;white-space:nowrap;color:#222;font:inherit}
+.mock button:hover{background:#eee}
+.mock button[aria-pressed="true"]{background:#222;color:#fff}
+.toast{position:fixed;left:50%;bottom:84px;transform:translate(-50%,10px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:15.5px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60}
+.toast.is-on{opacity:1;transform:translate(-50%,0)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .lt__dim{inset:0;border-radius:17px;background:#062730;opacity:0;transition:opacity .8s}
+body[data-state="expired"] .lt__dim{opacity:.3}
+body[data-state="expired"] .stage{background:
+  radial-gradient(900px 420px at 58% 108%,rgba(255,255,255,.04),transparent 70%),
+  linear-gradient(180deg,#0B3F4D 0,#0B3F4D 60%,#083039 60.4%,#0A3742 100%)}
+.rig[data-led="free"] .lt__led{opacity:1}
+}
+
+/* ================= live page: overrides and additions ================= */
+.brand{text-decoration:none}
+.brand img,.brand svg{width:auto;height:28px;display:block}
+#brandMark{display:flex}
+.nav a{padding:8px 14px;font-weight:500;color:var(--ink-2);border-radius:6px;position:relative;white-space:nowrap;text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.nav a[aria-current="page"]{color:var(--ink);font-weight:700}
+.nav a[aria-current="page"]::after{content:"";position:absolute;left:14px;right:14px;bottom:-13px;height:3px;background:var(--petrol)}
+.live{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--ink-2);white-space:nowrap}
+.live i{width:9px;height:9px;border-radius:50%;background:var(--off)}
+.live.is-ok i{background:#1FA866;box-shadow:0 0 0 3px rgba(63,217,138,.3)}
+.live.is-bad{color:var(--time-ink);font-weight:600}
+.live.is-bad i{background:var(--time)}
+.net{text-underline-offset:3px}
+
+.stage__in{grid-template-columns:minmax(0,1fr) auto 316px;column-gap:26px;min-height:572px}
+.rigbox{--k:.9}
+.say{max-width:none}
+.h1{text-wrap:balance}
+.h1__id{display:block;font-size:40px;line-height:1.08;letter-spacing:-.018em;overflow-wrap:anywhere}
+.h1__rest{display:block;font-size:30px;line-height:1.15;letter-spacing:-.01em;font-weight:600;color:var(--light);margin-top:4px}
+.say .h1--plain{font-size:54px}
+.lede{text-wrap:pretty}
+.lede a,.note a,.pfacts a{color:#fff;text-underline-offset:3px;overflow-wrap:anywhere}
+.use{margin-top:20px}
+.use h3{font:600 18.5px/1.25 var(--display)}
+.use .btn{margin-top:2px}
+.bigcount{font:700 84px/1 var(--display);letter-spacing:-.03em;color:var(--light);margin-top:14px;font-variant-numeric:tabular-nums}
+
+/* note pinned above the shut lid: what this machine is */
+.pin{position:absolute;left:138px;bottom:318px;width:330px;padding-bottom:12px;font-size:15.5px;line-height:1.4;color:var(--mist)}
+.pin::after{content:"";position:absolute;left:14px;top:100%;height:62px;border-left:1.5px solid rgba(255,255,255,.5)}
+.pin::before{content:"";position:absolute;left:10.5px;top:calc(100% + 60px);width:8px;height:8px;border-radius:50%;background:#fff}
+.pin.is-off{opacity:0;pointer-events:none}
+.pin__name{display:block;color:#fff;font:700 25px/1.12 var(--display);overflow-wrap:anywhere}
+.pin__price{display:block;margin-top:4px;font-size:17px;color:#E5EEEE}
+.pin__price b{color:#fff;font:700 19px/1 var(--display)}
+.pin .status{margin-top:6px;color:#fff;font-size:16px}
+.pin__note{display:block;margin-top:6px}
+.pin code{display:block;margin-top:2px;color:#E5EEEE;overflow-wrap:anywhere}
+.lt.is-off{display:none}
+.altdev{position:absolute;left:0;right:0;bottom:0;top:176px;display:flex;align-items:flex-end;justify-content:center}
+.altdev .gp-device{max-width:440px}
+.rig.is-alt .pin{bottom:366px}
+.rig.is-alt .pin::after{height:26px}
+.rig.is-alt .pin::before{top:calc(100% + 24px)}
+.scr__top{overflow-wrap:anywhere;max-width:100%}
+.scr__count.is-long{font-size:92px}
+.scr__bot{overflow-wrap:anywhere}
+body[data-hero="ended"] .lt__dim{opacity:.3}
+body[data-hero="ended"] .stage,body[data-hero="paused"] .stage{background:
+  radial-gradient(900px 420px at 58% 108%,rgba(255,255,255,.04),transparent 70%),
+  linear-gradient(180deg,#0B3F4D 0,#0B3F4D 60%,#083039 60.4%,#0A3742 100%)}
+
+/* right column: the dial and, next to it, the price */
+.side{width:316px;align-self:center;text-align:center}
+.side .dial{width:196px;height:196px}
+.side .timer__foot{width:120px}
+.side .timer__cap{min-height:0;margin-top:6px}
+.side .timer__ctl{margin:4px 0 0}
+.rent{text-align:left;margin-top:12px}
+.rent .sum{margin-top:0}
+.rent .sum__row{padding:7px 0;font-size:16px}
+.rent .sum__row b{font-size:17px}
+.rent .sum__total{padding:9px 0 10px}
+.rent .sum__total b{font-size:32px}
+.rent .cmd{margin:0 0 8px;font-size:13px}
+.rent .btn{width:100%}
+.rent .note{margin-top:8px;font-size:14px}
+.pfacts{text-align:left;margin-top:14px;border-top:1px solid rgba(255,255,255,.25)}
+.pfacts div{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.25);font-size:15.5px}
+.pfacts dt{color:var(--mist);flex:none}
+.pfacts dd{text-align:right;font-weight:600;overflow-wrap:anywhere;min-width:0}
+
+/* shelf */
+.shelf{row-gap:40px}
+.bay{cursor:pointer}
+.bay__conn{font-size:14px;color:var(--ink-2);margin-top:3px;overflow-wrap:anywhere}
+.bay__conn code{font-size:13.5px}
+.bay__name{overflow-wrap:anywhere}
+.bay__key{font-size:14.5px;color:var(--ink-2);margin-top:8px}
+.bay__owner a{overflow-wrap:anywhere}
+.bay[data-av="busy"] .led{fill:var(--busy)}
+.bay[data-av="paused"] .led{fill:var(--off)}
+.bay.is-on .bay__name::after{content:"On the desk above"}
+.bay.is-paused{opacity:.62}
+.paused{margin-top:34px;border-top:1px solid var(--line);padding-top:16px}
+.paused summary{cursor:pointer;font-weight:600;width:max-content}
+.paused .shelf{margin-top:22px}
+.shelf__note{margin-top:22px;color:var(--ink-2);font-size:17px}
+.passes{margin-top:60px}
+.passes table{margin-top:18px}
+.passes td{overflow-wrap:anywhere}
+.passes__more{margin-top:12px;color:var(--ink-2);font-size:15.5px}
+.pill--live{background:var(--light);color:var(--ink)}
+.pill--sign{background:#FFE3B5;color:#5A3300}
+.cmdl{font-family:var(--mono);font-size:14px;line-height:1.5;background:#0C3F4D;color:#EAF1F1;border-radius:8px;padding:11px 14px;margin:8px 0 0;overflow-wrap:anywhere}
+.howto{margin-top:14px;display:grid;gap:18px}
+.howto h3{font:700 19px/1.2 var(--display)}
+.howto p{color:var(--ink-2);font-size:16px;margin-top:4px}
+.totals{display:flex;flex-wrap:wrap;gap:10px 44px;margin-bottom:20px}
+.totals div b{display:block;font:700 40px/1 var(--display);letter-spacing:-.02em}
+.totals div span{color:var(--ink-2);font-size:15.5px}
+.eg{display:inline-block;font:600 14.5px/1 var(--body);background:var(--light);color:var(--ink);border-radius:4px;padding:5px 9px;margin-bottom:10px}
+.run a{color:var(--light);text-underline-offset:3px}
+.page .log li{grid-template-columns:minmax(0,1fr) auto}
+.mock[hidden]{display:none}
+
+@media (max-width:1320px){
+  .stage__in{grid-template-columns:minmax(0,1fr) auto;row-gap:10px}
+  .side{grid-column:1/-1;width:100%;max-width:720px;justify-self:center;display:grid;grid-template-columns:230px minmax(0,1fr);column-gap:28px;align-items:center}
+  .side__dial{grid-column:1}
+  .rent,.pfacts{grid-column:2;grid-row:1;margin-top:0}
+  .rigbox{--k:.8}
+}
+@media (max-width:1000px){
+  .stage__in{grid-template-columns:minmax(0,1fr)}
+  .rigbox{--k:.9;margin-top:6px}
+  .two{grid-template-columns:1fr;gap:36px}
+  .nav{order:5;flex-basis:100%;overflow-x:auto;margin:0 -8px}
+  .top__in{flex-wrap:wrap;height:auto;padding-top:12px;gap:8px 16px;justify-content:space-between}
+  .nav a[aria-current="page"]::after{bottom:0}
+  .net{display:none}
+}
+@media (max-width:700px){
+  body{font-size:16.5px}
+  .wrap{padding:0 18px}
+  .say .h1--plain{font-size:40px}
+  .h1__id{font-size:32px}
+  .h1__rest{font-size:25px}
+  .page .h1{font-size:36px}
+  .rigbox{--k:.56}
+  .pin{font-size:26px;width:470px;left:110px;bottom:300px}
+  .pin__name{font-size:40px}
+  .pin__price{font-size:28px}
+  .pin__price b{font-size:31px}
+  .pin .status{font-size:27px}
+  .pin .status::before{width:17px;height:17px}
+  .pin__note{display:none}
+  .side{display:block;max-width:none}
+  .rent,.pfacts{margin-top:12px}
+  .shelf,.trust,.facts{grid-template-columns:1fr}
+  .bay,.bay + .bay{padding:0 0 6px;border-left:0}
+  .bay__dev,.bay + .bay .bay__dev{margin:0;padding-left:6px}
+  .trust,.facts{gap:22px}
+  .cannot ul{grid-template-columns:1fr}
+  .run{padding:22px 18px 20px}
+  .log li{grid-template-columns:1fr auto}
+  .log time{grid-column:1/-1}
+  .bigcount{font-size:64px}
+}
+</style>
 </head>
-<body>
-  <div class="page">
-    <header class="masthead">
-      <div class="masthead-id">
-        <h1 class="wordmark">Gatepass</h1>
-        <p class="pitch">Pay on NEAR, get an SSH pass into a machine for exactly the minutes you paid for.</p>
-        <p class="source">
-          <span>Contract <a id="contract-link" class="account" href="#" target="_blank" rel="noopener noreferrer"></a></span>
-          <span class="network">testnet</span>
-          <span id="sync" class="sync" data-state="loading">Reading the contract</span>
-        </p>
-      </div>
-      <div class="masthead-figures">
-        <dl class="totals" aria-label="Totals">
-          <div class="total"><dd id="total-machines">–</dd><dt>machines</dt></div>
-          <div class="total"><dd id="total-passes">–</dd><dt>passes issued</dt></div>
-          <div class="total"><dd><span id="total-earned">–</span> <span class="unit">NEAR</span></dd><dt>total earned</dt></div>
-        </dl>
-        <p id="fees" class="fees" hidden>Storage fees, kept by the contract: <strong id="fee-machine">–</strong> NEAR once to list a machine, <strong id="fee-pass">–</strong> NEAR added to every pass.</p>
-      </div>
-    </header>
+<body data-hero="loading">
 
-    <p id="error" class="error" role="alert" hidden></p>
-
-    <section class="authority" aria-labelledby="ca-title">
-      <div class="authority-claim">
-        <h2 id="ca-title">How access is enforced</h2>
-        <ul class="authority-points">
-          <li>Every machine has its own certificate authority key, so a pass for one machine does not work on any other.</li>
-          <li>Nobody holds the private half of any key. NEAR Chain Signatures signs a pass only when this contract asks, and it asks only after payment.</li>
-          <li>A machine has one renter at a time. While a pass is running, nobody else can buy one for it.</li>
-          <li>Owners publish the machine's SSH host key on chain, so the renter connects only to the right machine.</li>
-        </ul>
-      </div>
-      <dl class="authority-meta">
-        <div><dt>MPC contract</dt><dd><a id="ca-mpc" class="account" href="#" target="_blank" rel="noopener noreferrer">–</a></dd></div>
-        <div><dt>Key path</dt><dd id="ca-path">–</dd></div>
-        <div><dt>Domain</dt><dd id="ca-domain">–</dd></div>
-      </dl>
-    </section>
-
-    <main class="board">
-      <section class="passes" aria-labelledby="passes-title">
-        <h2 id="passes-title">Recent passes</h2>
-        <ol id="passes" class="pass-list"></ol>
-        <p id="passes-note" class="note">Reading the contract</p>
-      </section>
-
-      <section class="machines" aria-labelledby="machines-title">
-        <h2 id="machines-title">Machines</h2>
-        <ul id="machines" class="machine-list"></ul>
-        <p id="machines-note" class="note">Reading the contract</p>
-      </section>
-    </main>
+<header class="top">
+  <div class="wrap top__in">
+    <a class="brand" href="#machines" aria-label="Gatepass, home">
+      <span id="brandMark"><svg viewBox="0 0 34 26" aria-hidden="true"><path d="M9 3.5 23.5 2l3 14.5-14.5 1z" fill="#FFF1C7" stroke="#0B2A33" stroke-width="2" stroke-linejoin="round"/><path d="M2.5 19.5h29l-2.2 4H4.7z" fill="#0E4A5A" stroke="#0B2A33" stroke-width="2" stroke-linejoin="round"/></svg></span>
+      Gatepass
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#machines" data-nav="machines">Machines</a>
+      <a href="#passes" data-nav="passes">Passes</a>
+      <a href="#owners" data-nav="owners">For owners</a>
+      <a href="#agents" data-nav="agents">Agents</a>
+    </nav>
+    <span class="live" id="live" role="status"><i aria-hidden="true"></i><span id="liveText">Reading the chain</span></span>
+    <a class="net" id="contractLink" target="_blank" rel="noopener noreferrer">NEAR testnet</a>
   </div>
+</header>
 
-  <noscript><p class="error">This page reads the contract with JavaScript. Turn it on to see the dashboard.</p></noscript>
-  <script type="module" src="./app.js"></script>
+<main>
+
+<!-- ============ THE STAGE: the selected machine, drawn from chain data ============ -->
+<section class="stage" data-view="machines" aria-label="The selected machine">
+  <div class="wrap stage__in">
+
+    <div class="say">
+      <h1 class="h1 h1--plain" id="h1">Rent a computer by the minute.</h1>
+      <p class="lede" id="lede">Reading machines from the chain.</p>
+      <ol class="steps" id="steps" aria-label="How renting works">
+        <li>Pick a machine</li>
+        <li>Turn the dial, copy the rent command</li>
+        <li id="step3">Run it in a terminal: the lid opens in about 7 seconds</li>
+      </ol>
+      <ol class="prog" id="prog" hidden>
+        <li class="is-done"><span class="prog__dot" aria-hidden="true">1</span><div><h3>The contract checked the payment and wrote the pass</h3><p><code id="pgContract">gatepass.testnet</code> took the payment and reserved this machine for one renter.</p></div></li>
+        <li class="is-now"><span class="prog__dot" aria-hidden="true">2</span><div><h3>NEAR Chain Signatures is signing it</h3><p>Independent computers sign together, and only because the contract asked. Nobody holds that key: not us, not the owner.</p></div></li>
+        <li><span class="prog__dot" aria-hidden="true">3</span><div><h3>The pass is ready</h3><p>It works on this machine and nowhere else, for <span id="pgMinutes">5 minutes</span>.</p></div></li>
+      </ol>
+      <p class="refund" id="refund" hidden>If signing fails, the payment is refunded automatically. Nobody pays for a lid that stays shut.</p>
+      <div class="bigcount" id="bigCount" hidden></div>
+      <div class="use" id="use" hidden>
+        <h3>Whoever bought it connects with</h3>
+        <div class="cmd" id="sshCmd"></div>
+        <button class="btn btn--small" id="copySsh" type="button">Copy command</button>
+        <p class="note">Replace &lt;command&gt; with what to run, for example <code>uname -a</code>. Only the buyer's key works with this pass. When time is up the session is cut off and the files are wiped.</p>
+      </div>
+      <p class="warn" id="warn" role="status" hidden></p>
+    </div>
+
+    <div class="rigbox">
+      <div class="rig" id="rig" data-led="" data-scr="" role="img" aria-label="Machine">
+        <div class="lt" id="lt" aria-hidden="true">
+          <div class="lt__shadow"></div>
+          <div class="lt__spill"></div>
+          <div class="lt__b" style="--i:0;--in:4"></div><div class="lt__b" style="--i:1;--in:2.4"></div><div class="lt__b" style="--i:2;--in:1.2"></div><div class="lt__b" style="--i:3;--in:.4"></div>
+          <div class="lt__b" style="--i:4"></div><div class="lt__b" style="--i:5"></div><div class="lt__b" style="--i:6"></div><div class="lt__b" style="--i:7"></div><div class="lt__b" style="--i:8"></div><div class="lt__b" style="--i:9"></div>
+          <div class="lt__deck">
+            <div class="lt__hinge"></div>
+            <div class="lt__keys"></div><div class="lt__space"></div>
+            <div class="lt__pad"></div>
+            <div class="lt__wash"></div>
+          </div>
+          <div class="lt__lid" id="lid">
+            <div class="lt__l" style="--i:1"></div><div class="lt__l" style="--i:2"></div><div class="lt__l" style="--i:3"></div><div class="lt__l" style="--i:4"></div>
+            <div class="lt__shell">
+              <svg class="lt__mark" viewBox="0 0 34 26" style="position:absolute"><path d="M9 3.5 23.5 2l3 14.5-14.5 1z" fill="none" stroke="#7E8C91" stroke-width="2" stroke-linejoin="round"/><path d="M2.5 19.5h29l-2.2 4H4.7z" fill="none" stroke="#7E8C91" stroke-width="2" stroke-linejoin="round"/></svg>
+              <i class="lt__dim"></i><i class="lt__led"></i>
+            </div>
+            <div class="lt__screen">
+              <i class="lt__cam"></i>
+              <div class="display">
+                <div class="scr scr--boot"><p id="bootLine">Signing the pass</p><small id="bootSub">NEAR Chain Signatures</small></div>
+                <div class="scr scr--live">
+                  <p class="scr__top" id="scrTop"></p>
+                  <div class="scr__count" id="count"></div>
+                  <div class="scr__bar" id="barWrap"><i id="bar"></i></div>
+                  <p class="scr__bot" id="scrBot"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="altdev" id="altdev" hidden></div>
+        <div class="pin is-off" id="pin" aria-live="polite">
+          <span class="pin__name" id="pinName"></span>
+          <span class="pin__price"><b id="pinPrice"></b> per minute</span>
+          <span class="status" id="pinStatus"></span>
+          <span class="pin__note" id="pinNote"></span>
+          <code id="pinConn"></code>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="side__dial">
+        <div class="dial" id="dial" role="slider" tabindex="0" aria-label="Minutes to rent" aria-valuemin="1" aria-valuemax="240" aria-valuenow="5" aria-valuetext="5 minutes">
+          <svg viewBox="0 0 300 300" aria-hidden="true">
+            <defs>
+              <linearGradient id="gRim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F2F4F5"/><stop offset=".5" stop-color="#B9C2C6"/><stop offset="1" stop-color="#8D999E"/></linearGradient>
+              <linearGradient id="gKnob" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16596B"/><stop offset="1" stop-color="#0A3440"/></linearGradient>
+            </defs>
+            <g class="dial__flag"><rect x="97" y="-24" width="106" height="40" rx="5" fill="#F26A1B"/><text x="150" y="-1" text-anchor="middle" font-size="17" font-weight="700" fill="#1B0A00">Time is up</text></g>
+            <circle cx="150" cy="150" r="148" fill="url(#gRim)"/>
+            <circle cx="150" cy="150" r="138" fill="#F8F5EA"/>
+            <circle cx="150" cy="150" r="138" fill="none" stroke="#0B2A33" stroke-opacity=".18" stroke-width="1.5"/>
+            <circle class="dial__arc" id="arc" cx="150" cy="150" r="124" fill="none" stroke="#F26A1B" stroke-width="20" transform="rotate(-90 150 150)" stroke-dasharray="779.1" stroke-dashoffset="779.1"/>
+            <g id="ticks" stroke="#0B2A33" stroke-linecap="round"></g>
+            <g id="nums" font-size="15.5" font-weight="600" fill="#0B2A33" text-anchor="middle"></g>
+            <circle cx="150" cy="150" r="80" fill="#0B2A33" opacity=".16" transform="translate(0 4)"/>
+            <g class="dial__hand" id="hand">
+              <circle cx="150" cy="150" r="78" fill="url(#gKnob)"/>
+              <circle cx="150" cy="150" r="75" fill="none" stroke="#062730" stroke-width="5" stroke-dasharray="2.2 3.4"/>
+              <path d="M150 59 L159 84 L141 84 Z" fill="#F26A1B" stroke="#0B2A33" stroke-width="1.5" stroke-linejoin="round"/>
+            </g>
+            <circle cx="150" cy="150" r="63" fill="#0C4352"/>
+            <circle cx="150" cy="150" r="63" fill="none" stroke="#fff" stroke-opacity=".12"/>
+            <text id="dialNum" x="150" y="162" text-anchor="middle" font-size="50" font-weight="700" fill="#FFF1C7" letter-spacing="-1">0</text>
+            <text id="dialUnit" x="150" y="185" text-anchor="middle" font-size="16" font-weight="500" fill="#BCD0D4">minutes</text>
+            <g id="pips" fill="none" stroke="#BCD0D4" stroke-width="1.5"><circle cx="129" cy="112" r="4"/><circle cx="143" cy="112" r="4"/><circle cx="157" cy="112" r="4"/><circle cx="171" cy="112" r="4"/></g>
+          </svg>
+        </div>
+        <div class="timer__foot" aria-hidden="true"></div>
+        <div class="timer__ctl" id="ctl" hidden>
+          <button class="pm" id="minus" type="button" aria-label="One minute less">&minus;</button>
+          <button type="button" data-m="1">1</button><button type="button" data-m="5">5</button><button type="button" data-m="15">15</button><button type="button" data-m="60">60</button>
+          <button class="pm" id="plus" type="button" aria-label="One minute more">+</button>
+        </div>
+        <p class="timer__cap" id="dialCap"></p>
+      </div>
+
+      <div class="rent" id="rent" hidden>
+        <div class="sum" aria-live="polite">
+          <div class="sum__row"><span id="sumCalc"></span><b id="sumTime"></b></div>
+          <div class="sum__row"><span>Storage fee, once per pass</span><b id="sumFee"></b></div>
+          <div class="sum__total"><span>Total</span><b><span id="sumTotal"></span><small>NEAR</small></b></div>
+        </div>
+        <div class="cmd" id="rentCmd"></div>
+        <button class="btn" id="copyRent" type="button">Copy the rent command</button>
+        <p class="note">Paying from the browser is not built yet. Run this in a terminal in the repo; this page follows the pass live.</p>
+      </div>
+      <dl class="pfacts" id="pfacts" hidden></dl>
+    </div>
+  </div>
+</section>
+
+<section class="below" data-view="machines" id="machines-list">
+  <div class="wrap">
+    <h2 class="h2">Machines you can rent right now<small>Read from the chain every 2 seconds. One renter at a time per machine; the light shows whether it is free. Pick one to put it on the desk above.</small></h2>
+    <ul class="shelf" id="shelf"></ul>
+    <p class="shelf__note" id="shelfNote">Reading machines from the chain.</p>
+    <details class="paused" id="pausedBox" hidden>
+      <summary id="pausedSum">Show paused machines</summary>
+      <ul class="shelf" id="shelfPaused"></ul>
+    </details>
+
+    <div class="passes" id="passes">
+      <h2 class="h2">Recent passes<small>Every pass the contract has written, newest first.</small></h2>
+      <div class="scrollx"><table>
+        <thead><tr><th>Pass</th><th>Machine</th><th>Buyer</th><th>Time</th><th>Price</th><th>State</th></tr></thead>
+        <tbody id="passRows"></tbody>
+      </table></div>
+      <p class="passes__more" id="passMore"></p>
+    </div>
+
+    <div class="trust">
+      <h2 class="h2">Why the lid opens only for the renter</h2>
+      <div><h3>Nobody holds the key</h3><p>Passes are signed by a network of independent computers, NEAR Chain Signatures. It signs only when the Gatepass contract asks, and the contract asks only after it has been paid.</p></div>
+      <div><h3>One machine, one renter</h3><p>Every machine has its own signing key, so a pass for one machine is useless on another. While a pass is live, nobody else can rent that machine.</p></div>
+      <div><h3>Nothing is left behind</h3><p>When the minutes end the session is cut off and the files are wiped. Renters cannot become admin, change the system or reach the owner's network.</p></div>
+    </div>
+    <details class="tech">
+      <summary>How it works, technically</summary>
+      <p>A pass is a short-lived OpenSSH user certificate. The contract <code id="techContract">gatepass.testnet</code> records the payment, then asks NEAR Chain Signatures (an MPC network, <code id="techMpc">v1.signer-prod.testnet</code>) to sign the certificate with a key derived for that one machine. The machine's SSH server trusts only that key, and the certificate's validity window is exactly the minutes paid for. If signing fails, the contract refunds the payment.</p>
+    </details>
+  </div>
+</section>
+
+<!-- FOR OWNERS -->
+<section class="page" data-view="owners" hidden>
+  <div class="wrap">
+    <h1 class="h1">Lend out a computer you are not using</h1>
+    <p class="lede">List any computer you can leave switched on. Renters pay the contract, the contract pays you by the minute. You never hand anyone a password.</p>
+    <div class="two">
+      <div>
+        <h2 class="h2" style="font-size:26px">How to do it</h2>
+        <div class="howto">
+          <div><h3>List a machine</h3><p>Run this on the computer you want to lend. It sets up the locked-down login and lists the machine on-chain. Listing costs <b id="ownFee">0.02</b> NEAR once.</p><div class="cmdl">scripts/host-up.sh &lt;id&gt; &lt;public-host&gt; &lt;price&gt; &lt;port&gt;</div></div>
+          <div><h3>Withdraw what it earned</h3><p>Earnings sit in the contract until you take them.</p><div class="cmdl">bin/gatepass withdraw &lt;machine&gt;</div></div>
+        </div>
+        <div class="cannot">
+          <h2 class="h2" style="font-size:26px">What a renter cannot do on your machine</h2>
+          <ul>
+            <li>Become admin</li>
+            <li>Change the system: it is read-only</li>
+            <li>Use more CPU or memory than the limit</li>
+            <li>Reach the internet or your network</li>
+            <li>Stay past the minutes they paid for</li>
+            <li>Leave files behind</li>
+          </ul>
+        </div>
+      </div>
+      <div>
+        <h2 class="h2" style="font-size:26px">Every listed machine, from the chain</h2>
+        <div class="totals" style="margin-top:16px">
+          <div><b id="totEarned">0</b><span>NEAR earned by all machines</span></div>
+          <div><b id="totPasses">0</b><span>passes issued</span></div>
+        </div>
+        <div class="scrollx"><table>
+          <thead><tr><th>Machine</th><th>Owner</th><th>Price</th><th>Passes</th><th>Earned</th><th>Not yet withdrawn</th></tr></thead>
+          <tbody id="ownRows"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AGENTS -->
+<section class="page" data-view="agents" hidden>
+  <div class="wrap">
+    <div class="two" style="margin-top:0">
+      <div>
+        <h1 class="h1">An agent can open a machine by itself</h1>
+        <p class="lede">Give a software agent a wallet and a budget. It finds a machine, pays, runs its job and reports what it cost. Nobody creates an account for it.</p>
+        <div class="budget">
+          <h2 class="h2" style="font-size:22px">Budget in the example run</h2>
+          <div class="budget__bar" role="img" aria-label="0.02 of 0.1 NEAR spent"><i></i></div>
+          <div class="budget__row"><span><b>0.02 NEAR</b> spent</span><span>0.08 NEAR left of 0.1</span></div>
+        </div>
+        <div class="howto" style="margin-top:30px;max-width:460px">
+          <div><h3>Run it yourself</h3><p>From the repo. The rental shows up live on the Machines page while it runs.</p><div class="cmdl">scripts/agent-demo.sh</div></div>
+        </div>
+      </div>
+      <div class="run">
+        <div class="run__head"><span class="eg">Example of one real run, not live</span><span></span></div>
+        <div class="run__task"><span>Task</span>How many prime numbers are there below 50000?</div>
+        <ol class="log">
+          <li><span><b>Looked at 2 machines</b><small>Compared price and availability on the chain.</small></span></li>
+          <li><span><b>Rented the 0.01 NEAR per minute machine for 1 minute</b><small>0.01 NEAR for time plus the 0.01 NEAR storage fee. The pass was signed and the lid opened. <a href="https://testnet.nearblocks.io/txns/GfyJisovwTPXsJaVoegbSMjviojMZ6azbYTVTej4hrj9" target="_blank" rel="noopener noreferrer">See the transaction</a></small></span><span class="log__amt">0.02 NEAR</span></li>
+          <li><span><b>Logged in and ran a Python sieve</b><small>Counted the primes below 50000 on the rented machine.</small></span></li>
+          <li><span><b>Answer</b><span class="answer" style="display:block;margin-top:6px">5133</span></span></li>
+          <li><span><b>Reported the cost</b><small>The model made 5 calls in total. The pass expired after its minute and the machine was free again.</small></span></li>
+        </ol>
+        <div class="run__sum"><span>Spent, of a 0.1 NEAR budget</span><b>0.02 NEAR</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<div class="mock" id="mock" role="group" aria-label="Preview states, not live data" hidden>
+  <span class="mock__label">Preview states (not live data)</span>
+  <button type="button" data-pv="live">Live data</button>
+  <button type="button" data-pv="free">Free</button>
+  <button type="button" data-pv="signing">Being signed</button>
+  <button type="button" data-pv="active">In use</button>
+  <button type="button" data-pv="last">Last minute</button>
+  <button type="button" data-pv="ended">Ended</button>
+  <button type="button" data-pv="paused">Paused</button>
+</div>
+
+<script type="module">
+import defaults from './config.js';
+import { formatClock, formatCountdown, formatNear, machineAvailability, parseYocto } from './format.js';
+import * as devmod from './devices.js';
+const dev = devmod;
+
+const POLL_MS = 2000, TICK_MS = 250, TIMEOUT_MS = 8000, PAGE = 50, PASS_ROWS = 12;
+const params = new URLSearchParams(location.search);
+const PREVIEW = params.get('preview') === '1';
+
+function readConfig() {
+  const cfg = { ...defaults };
+  const contract = params.get('contract');
+  if (contract && /^[a-z0-9._-]{2,64}$/.test(contract)) cfg.contract = contract;
+  const rpc = params.get('rpc');
+  if (rpc) { try { const u = new URL(rpc); if (u.protocol === 'https:' || u.protocol === 'http:') cfg.rpc = [u.href]; } catch { /* keep default */ } }
+  cfg.explorer = String(cfg.explorer).replace(/\/+$/, '');
+  return cfg;
+}
+const cfg = readConfig();
+const $ = (id) => document.getElementById(id);
+
+/* ---------- RPC with failover ---------- */
+const rpcUrls = [cfg.rpc].flat();
+let rpcIndex = 0;
+async function view(method, args = {}) {
+  let lastError;
+  for (let i = 0; i < rpcUrls.length; i++) {
+    try { return await viewOnce(rpcUrls[rpcIndex], method, args); }
+    catch (err) { lastError = err; if (err.fromContract) throw err; rpcIndex = (rpcIndex + 1) % rpcUrls.length; }
+  }
+  throw lastError;
+}
+async function viewOnce(url, method, args) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: cfg.contract, method_name: method, args_base64: btoa(JSON.stringify(args)) } }) });
+  } catch (err) {
+    throw new Error(ctl.signal.aborted ? 'no answer from the RPC' : 'network error');
+  } finally { clearTimeout(timer); }
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' from the RPC');
+  const body = await res.json();
+  if (body.error) throw new Error(method + ': RPC error');
+  if (body.result?.error) { const e = new Error(method + ': ' + body.result.error); e.fromContract = true; throw e; }
+  if (!Array.isArray(body.result?.result)) throw new Error(method + ': unexpected RPC response');
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(body.result.result)));
+}
+async function allMachines() {
+  const out = [];
+  for (let from = 0; from < PAGE * 10; from += PAGE) {
+    const page = await view('list_machines', { from_index: from, limit: PAGE });
+    if (!Array.isArray(page)) break;
+    out.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return out;
+}
+
+/* ---------- helpers: chain strings only ever go in through textContent ---------- */
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = String(text); return n; }
+function acct(account) { const a = el('a', '', account); a.href = cfg.explorer + '/address/' + encodeURIComponent(String(account)); a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
+function show(node, on) { node.hidden = !on; }
+function minsText(m) { return m + (Number(m) === 1 ? ' minute' : ' minutes'); }
+function shortClock(ms) { const d = new Date(ms); return Number.isNaN(d.getTime()) ? '?' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }); }
+function fullClock(ms) { return formatClock(ms / 1000); }
+function mmss(s) { s = Math.max(0, s); if (s >= 3600) return formatCountdown(s); const m = Math.floor(s / 60), r = s % 60; return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r; }
+function near(v) { return formatNear(v); }
+function guessKind(id) { const s = String(id).toLowerCase(); if (/arm|board|pi\b|tiny/.test(s)) return 'board'; if (/gpu|rig|tower|big/.test(s)) return 'tower'; return 'laptop'; }
+function kindOf(id) { try { if (dev && dev.deviceKind) return dev.deviceKind(String(id)); } catch { /* fall through */ } return guessKind(id); }
+function toast(t) { const n = $('toast'); n.textContent = t; n.classList.add('is-on'); clearTimeout(toast.t); toast.t = setTimeout(() => n.classList.remove('is-on'), 2400); }
+async function copy(text, button, label) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch {
+    try { const ta = el('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.append(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch { ok = false; }
+  }
+  toast(ok ? 'Copied: ' + text : 'Could not copy. Select the command and copy it by hand.');
+  if (ok && button) { button.textContent = 'Copied'; setTimeout(() => { button.textContent = label; }, 1600); }
+}
+
+const ICONS = {
+  laptop: '<svg viewBox="0 0 150 105"><path d="M14 86 96 74l40 12-82 13z" fill="#DCE1E3"/><path d="M14 86v6l40 13v-6z" fill="#8D999E"/><path d="M54 99v6l82-13v-6z" fill="#B3BCC0"/><path d="M14 86 96 74l40 12-82 13z" fill="none" stroke="#0B2A33" stroke-opacity=".25"/><rect class="led" x="88" y="95.500" width="14" height="3.400" rx="1.700" transform="rotate(-9 95 97)" fill="#3FD98A"/></svg>',
+  tower: '<svg viewBox="0 0 150 105"><path d="M28 22h46v82H28z" fill="#CCD3D6"/><path d="M28 22 46 10h46L74 22z" fill="#EEF1F2"/><path d="M74 22 92 10v82l-18 12z" fill="#8D999E"/><path d="M34 60h34M34 67h34M34 74h34M34 81h34M34 88h34" stroke="#0B2A33" stroke-opacity=".45" stroke-width="2.400" stroke-linecap="round"/><rect x="34" y="42" width="34" height="7" rx="1.500" fill="#0B2A33" opacity=".7"/><circle class="led" cx="38" cy="31" r="3.400" fill="#3FD98A"/></svg>',
+  board: '<svg viewBox="0 0 150 105"><path d="M16 86 88 76l44 10-72 12z" fill="#1F6A5C"/><path d="M16 86v4l44 12v-4z" fill="#0F4037"/><path d="M60 98v4l72-12v-4z" fill="#17574B"/><path d="M58 82 80 79l14 3.400-22 3.200z" fill="#0B2A33"/><path d="M96 71h20v12l-8 1.400-12-2.800z" fill="#CCD3D6"/><path d="M96 71l12 2.800v10.600l-12-2.800z" fill="#8D999E"/><path d="M30 83.500 66 78.600" stroke="#E9C46A" stroke-width="3.400" stroke-dasharray="1.600 2.200"/><path d="M40 90.500l9 2.300" stroke="#0B2A33" stroke-width="4" stroke-linecap="round"/><circle class="led" cx="76" cy="92.500" r="2.600" fill="#3FD98A"/></svg>',
+};
+
+/* ---------- state ---------- */
+const st = { config: null, configAt: 0, machines: [], passes: [], loaded: false, error: null, lastOk: 0,
+  sel: params.get('machine') || null, pinned: !!params.get('machine'), minutes: 5, preview: null,
+  maxSerial: null, seen: new Map(), drag: null, view: 'machines', sig: {}, bays: [], rows: [] };
+const STUB = { id: 'demo-box', owner: 'owner.testnet', host: '127.0.0.1', port: 2222, login_user: 'renter', price_per_minute: '10000000000000000000000', earnings: '0', total_earned: '0', passes_issued: 0, active: true, busy_until: 0, host_key: null };
+
+function machine() { return st.machines.find((m) => m.id === st.sel) || null; }
+function maxMinutes() { return Math.min(240, Math.max(1, Number(st.config?.max_minutes) || 240)); }
+function feeYocto() { return parseYocto(st.config?.pass_storage_fee) ?? 0n; }
+
+function liveHero(m, now) {
+  if (!m) return { kind: st.loaded ? 'empty' : 'loading' };
+  const mine = st.passes.filter((p) => p.machine_id === m.id);
+  const pend = mine.find((p) => p.status === 'Pending' && Number(p.valid_before) * 1000 > now);
+  if (pend) return { kind: 'signing', pass: pend, since: st.seen.get(pend.serial) || now };
+  const last = mine.find((p) => p.status === 'Signed');
+  if (last) {
+    const end = Number(last.valid_before) * 1000;
+    if (end > now) return { kind: 'active', pass: last, end };
+    if (now - end < 60000) return { kind: 'ended', pass: last, end };
+  }
+  const busy = Number(m.busy_until) * 1000;
+  if (Number.isFinite(busy) && busy > now) return { kind: 'active', pass: null, end: busy };
+  if (!m.active) return { kind: 'paused' };
+  return { kind: 'free' };
+}
+function previewHero(m, now) {
+  const pv = st.preview;
+  const price = parseYocto(m.price_per_minute) ?? 0n;
+  const pass = { serial: 16, machine_id: m.id, buyer: 'gp-1ec2d6b25e.testnet', minutes: 5, paid: (price * 5n).toString(), status: 'Signed' };
+  if (pv.kind === 'signing') {
+    if (now - pv.t0 > 7000) { pv.kind = 'active'; pv.t0 = now; markPreview(); }
+    else return { kind: 'signing', pass: { ...pass, status: 'Pending' }, since: pv.t0 };
+  }
+  if (pv.kind === 'active') return { kind: 'active', pass, end: pv.t0 + 300000 };
+  if (pv.kind === 'last') return { kind: 'active', pass, end: pv.t0 + 52000 };
+  if (pv.kind === 'ended') return { kind: 'ended', pass, end: pv.t0 - 4000 };
+  if (pv.kind === 'paused') return { kind: 'paused' };
+  return { kind: 'free' };
+}
+function hero(now) {
+  const m = machine();
+  if (PREVIEW && st.preview) { const pm = m || STUB; return { m: pm, h: previewHero(pm, now) }; }
+  return { m, h: liveHero(m, now) };
+}
+
+/* ---------- polling ---------- */
+async function refresh() {
+  try {
+    if (!st.config || Date.now() - st.configAt > 30000) { st.config = await view('get_config'); st.configAt = Date.now(); }
+    const [machines, passes] = await Promise.all([allMachines(), view('list_recent_passes', { limit: 50 })]);
+    st.machines = Array.isArray(machines) ? machines : [];
+    st.passes = Array.isArray(passes) ? passes : [];
+    st.loaded = true; st.error = null; st.lastOk = Date.now();
+    onData();
+  } catch (err) {
+    st.error = String(err && err.message ? err.message : err);
+  } finally {
+    setTimeout(refresh, POLL_MS);
+  }
+}
+
+function pickDefault(now) {
+  const live = st.machines.find((m) => { const k = liveHero(m, now).kind; return k === 'signing' || k === 'active'; });
+  if (live) return live.id;
+  const demo = st.machines.find((m) => m.id === 'demo-box' && m.active);
+  if (demo) return demo.id;
+  const first = st.machines.find((m) => m.active) || st.machines[0];
+  return first ? first.id : null;
+}
+
+function onData() {
+  const now = Date.now();
+  for (const p of st.passes) if (p.status === 'Pending' && !st.seen.has(p.serial)) st.seen.set(p.serial, now);
+  const max = st.passes.reduce((a, p) => Math.max(a, Number(p.serial) || 0), 0);
+  if (!st.sel || !machine()) { if (!machine()) st.pinned = false; st.sel = pickDefault(now); }
+  else if (st.maxSerial !== null && max > st.maxSerial && !st.pinned && !st.drag && st.view === 'machines') {
+    const fresh = st.passes.find((p) => Number(p.serial) > st.maxSerial && st.machines.some((m) => m.id === p.machine_id));
+    const k = liveHero(machine(), now).kind;
+    if (fresh && (k === 'free' || k === 'paused' || k === 'ended')) st.sel = fresh.machine_id;
+  }
+  st.maxSerial = max;
+  renderShelf(); renderPasses(); renderOwners(); renderStatic();
+  tick();
+}
+
+/* ---------- static bits from config ---------- */
+function renderStatic() {
+  const c = st.config || {};
+  $('techContract').textContent = cfg.contract; $('pgContract').textContent = cfg.contract;
+  if (c.mpc_contract) $('techMpc').textContent = String(c.mpc_contract);
+  if (c.machine_storage_fee) $('ownFee').textContent = near(c.machine_storage_fee);
+}
+
+/* ---------- shelf ---------- */
+function bay(m) {
+  const li = el('li', 'bay' + (m.active ? '' : ' is-paused'));
+  li.dataset.id = m.id;
+  const d = el('div', 'bay__dev'); d.setAttribute('aria-hidden', 'true'); d.innerHTML = ICONS[kindOf(m.id)] || ICONS.laptop; // fixed local drawings, no chain data
+  const name = el('h3', 'bay__name', m.id);
+  const conn = el('p', 'bay__conn'); conn.append('Connects to ', el('code', '', `${m.login_user}@${m.host}:${m.port}`));
+  const row = el('div', 'bay__row');
+  const price = el('div', 'bay__price'); price.append(el('b', '', near(m.price_per_minute) + ' NEAR'), ' ', el('span', '', 'per minute'));
+  const owner = el('span', 'bay__owner'); owner.append('Lent by ', acct(m.owner)); price.append(owner);
+  const status = el('div', 'status');
+  row.append(price, status);
+  const key = el('p', 'bay__key', m.host_key ? 'Host key published on-chain, so a terminal can check it reached the right machine.' : 'Host key not published yet.');
+  const btn = el('button', 'btn btn--small btn--quiet', 'Put it on the desk'); btn.type = 'button';
+  li.append(d, name, conn, row, key, btn);
+  li.addEventListener('click', (e) => { if (e.target.closest('a')) return; select(m.id); });
+  st.bays.push({ m, li, status, btn });
+  return li;
+}
+function renderShelf() {
+  const sig = JSON.stringify(st.machines.map((m) => [m.id, m.owner, m.host, m.port, m.login_user, m.price_per_minute, m.active, !!m.host_key]));
+  if (sig === st.sig.shelf) { st.bays.forEach((b) => { b.m = st.machines.find((m) => m.id === b.m.id) || b.m; }); return; }
+  st.sig.shelf = sig; st.bays = [];
+  const on = st.machines.filter((m) => m.active), off = st.machines.filter((m) => !m.active);
+  $('shelf').replaceChildren(...on.map(bay));
+  $('shelfPaused').replaceChildren(...off.map(bay));
+  show($('pausedBox'), off.length > 0);
+  $('pausedSum').textContent = `Show paused machines (${off.length})`;
+  const note = $('shelfNote');
+  show(note, on.length === 0);
+  note.textContent = st.machines.length === 0 ? 'No machines are listed yet. An owner lists one with scripts/host-up.sh and it appears here.' : 'Every listed machine is paused by its owner right now.';
+}
+function tickShelf(now) {
+  for (const b of st.bays) {
+    const av = machineAvailability(b.m, now);
+    const text = av.kind === 'paused' ? 'Paused by its owner' : av.kind === 'busy' ? 'In use, free in ' + formatCountdown(av.secondsLeft) : 'Free now';
+    if (b.status.textContent !== text) b.status.textContent = text;
+    b.status.className = 'status' + (av.kind === 'busy' ? ' status--busy' : av.kind === 'paused' ? ' status--off' : '');
+    b.li.dataset.av = av.kind;
+    const sel = b.m.id === st.sel;
+    b.li.classList.toggle('is-on', sel);
+    const label = sel ? 'On the desk' : 'Put it on the desk';
+    if (b.btn.textContent !== label) b.btn.textContent = label;
+    b.btn.disabled = sel;
+  }
+}
+function select(id) {
+  st.sel = id; st.sig.hero = '';
+  tick();
+  window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto' : 'smooth' });
+}
+
+/* ---------- recent passes ---------- */
+function renderPasses() {
+  const list = st.passes.slice(0, PASS_ROWS);
+  const sig = JSON.stringify(list.map((p) => [p.serial, p.status, p.valid_before]));
+  if (sig === st.sig.passes) return;
+  st.sig.passes = sig; st.rows = [];
+  const body = $('passRows');
+  body.replaceChildren(...list.map((p) => {
+    const tr = el('tr');
+    const b = el('td'); b.append(el('b', '', '#' + p.serial));
+    const buyer = el('td'); buyer.append(acct(p.buyer));
+    const state = el('td'); const pill = el('span', 'pill'); state.append(pill);
+    tr.append(b, el('td', '', p.machine_id), buyer, el('td', '', minsText(p.minutes)), el('td', '', near(p.paid) + ' NEAR'), state);
+    st.rows.push({ p, pill });
+    return tr;
+  }));
+  if (list.length === 0) { const tr = el('tr'); const td = el('td', '', 'No passes yet. The first rental will show up here within 2 seconds.'); td.colSpan = 6; tr.append(td); body.append(tr); }
+  const total = Number(st.config?.pass_count) || st.passes.length;
+  $('passMore').textContent = total > list.length ? `Showing the latest ${list.length} of ${total} passes.` : '';
+}
+function tickPasses(now) {
+  for (const r of st.rows) {
+    const p = r.p, end = Number(p.valid_before) * 1000;
+    let text, cls = 'pill';
+    if (p.status === 'Pending') { text = 'Being signed'; cls += ' pill--sign'; }
+    else if (p.status === 'Failed') { text = 'Signing failed, refunded'; cls += ' pill--refund'; }
+    else if (p.status === 'Signed' && end > now) { text = 'Active, ' + formatCountdown(Math.ceil((end - now) / 1000)) + ' left'; cls += ' pill--live'; }
+    else if (p.status === 'Signed') text = 'Expired ' + fullClock(end);
+    else text = String(p.status);
+    if (r.pill.textContent !== text) r.pill.textContent = text;
+    if (r.pill.className !== cls) r.pill.className = cls;
+  }
+}
+
+/* ---------- owners ---------- */
+function renderOwners() {
+  const sig = JSON.stringify(st.machines.map((m) => [m.id, m.owner, m.price_per_minute, m.passes_issued, m.total_earned, m.earnings, m.active]));
+  if (sig === st.sig.own) return;
+  st.sig.own = sig;
+  let earned = 0n, passes = 0;
+  $('ownRows').replaceChildren(...[...st.machines].sort((a, b) => Number(!!b.active) - Number(!!a.active)).map((m) => {
+    earned += parseYocto(m.total_earned) ?? 0n; passes += Number(m.passes_issued) || 0;
+    const tr = el('tr');
+    const name = el('td'); name.append(el('b', '', m.id)); if (!m.active) name.append(' ', el('span', 'pill', 'Paused'));
+    const owner = el('td'); owner.append(acct(m.owner));
+    tr.append(name, owner, el('td', '', near(m.price_per_minute) + ' NEAR/min'), el('td', '', m.passes_issued), el('td', '', near(m.total_earned) + ' NEAR'), el('td', '', near(m.earnings) + ' NEAR'));
+    return tr;
+  }));
+  $('totEarned').textContent = near(earned);
+  $('totPasses').textContent = String(passes);
+}
+
+/* ---------- the dial ---------- */
+const C = 2 * Math.PI * 124;
+(function scale() {
+  const NS = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i < 60; i++) {
+    const a = i * 6 * Math.PI / 180, big = i % 5 === 0, r1 = big ? 126 : 129, r2 = 137;
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', (150 + r1 * Math.sin(a)).toFixed(1)); l.setAttribute('y1', (150 - r1 * Math.cos(a)).toFixed(1));
+    l.setAttribute('x2', (150 + r2 * Math.sin(a)).toFixed(1)); l.setAttribute('y2', (150 - r2 * Math.cos(a)).toFixed(1));
+    l.setAttribute('stroke-width', big ? 2.4 : 1.1); $('ticks').append(l);
+    if (big) { const t = document.createElementNS(NS, 'text'); t.setAttribute('x', (150 + 103 * Math.sin(a)).toFixed(1)); t.setAttribute('y', (150 - 103 * Math.cos(a) + 5.5).toFixed(1)); t.textContent = String(i); $('nums').append(t); }
+  }
+})();
+const dial = $('dial');
+function renderDial(h, now) {
+  let m = 0, num = '0', unit = 'minutes', cap = '', pips = false;
+  if (h.kind === 'active') { const left = Math.max(0, Math.ceil((h.end - now) / 1000)); m = left / 60; num = formatCountdown(left); unit = 'left'; cap = `Running down. It stops at ${fullClock(h.end)} and cannot be wound back up.`; }
+  else if (h.kind === 'ended') { num = '0:00'; unit = 'left'; cap = `Ran out at ${fullClock(h.end)}.`; }
+  else if (h.kind === 'signing') { m = Number(h.pass.minutes) || 0; num = String(m); unit = m === 1 ? 'minute' : 'minutes'; pips = true; cap = `${minsText(m)}, wound and locked. It starts when the pass is signed.`; }
+  else if (h.kind === 'free') { m = st.minutes; num = String(m); unit = m === 1 ? 'minute' : 'minutes'; pips = true; }
+  else if (h.kind === 'paused') cap = 'Paused by its owner. The dial is locked.';
+  const hours = Math.floor(m / 60 + 1e-9), inHour = m - hours * 60, frac = (hours > 0 && inHour < 1e-9) ? 1 : inHour / 60;
+  $('hand').style.transform = `rotate(${m * 6}deg)`;
+  $('arc').style.strokeDashoffset = (C * (1 - frac)).toFixed(1);
+  if ($('dialNum').textContent !== num) { $('dialNum').textContent = num; $('dialNum').setAttribute('font-size', num.length > 5 ? 30 : num.length > 3 ? 40 : 50); }
+  $('dialUnit').textContent = unit;
+  $('pips').style.display = pips ? '' : 'none';
+  document.querySelectorAll('#pips circle').forEach((c, i) => { c.setAttribute('fill', i < hours ? '#F26A1B' : 'none'); c.setAttribute('stroke', i < hours ? '#F26A1B' : '#BCD0D4'); });
+  if ($('dialCap').textContent !== cap) $('dialCap').textContent = cap;
+  show($('dialCap'), !!cap);
+  dial.classList.toggle('is-run', h.kind === 'active');
+  dial.classList.toggle('is-up', h.kind === 'ended');
+  const can = h.kind === 'free';
+  dial.setAttribute('aria-disabled', can ? 'false' : 'true'); dial.tabIndex = can ? 0 : -1;
+  dial.setAttribute('aria-valuemax', maxMinutes());
+  dial.setAttribute('aria-valuenow', can ? st.minutes : Math.round(m));
+  dial.setAttribute('aria-valuetext', h.kind === 'active' ? num + ' left' : minsText(Math.round(m)));
+}
+function setMinutes(v) { st.minutes = Math.min(maxMinutes(), Math.max(1, Math.round(v))); tick(); }
+function canTurn() { return document.body.dataset.hero === 'free'; }
+function angle(e) { const r = dial.getBoundingClientRect(), x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2); const a = Math.atan2(x, -y) * 180 / Math.PI; return a < 0 ? a + 360 : a; }
+dial.addEventListener('pointerdown', (e) => {
+  if (!canTurn()) return; e.preventDefault(); dial.focus();
+  const a = angle(e), hour = Math.floor((st.minutes - 1) / 60) * 60; let m = hour + Math.round(a / 6); if (m < 1) m = 1;
+  st.drag = { last: a, acc: m }; dial.classList.add('is-drag');
+  try { dial.setPointerCapture(e.pointerId); } catch { /* fine */ }
+  setMinutes(m);
+});
+dial.addEventListener('pointermove', (e) => {
+  if (!st.drag) return; const a = angle(e); let d = a - st.drag.last; if (d > 180) d -= 360; if (d < -180) d += 360;
+  st.drag.last = a; st.drag.acc = Math.min(maxMinutes(), Math.max(1, st.drag.acc + d / 6)); setMinutes(st.drag.acc);
+});
+function endDrag() { st.drag = null; dial.classList.remove('is-drag'); }
+dial.addEventListener('pointerup', endDrag); dial.addEventListener('pointercancel', endDrag);
+dial.addEventListener('keydown', (e) => {
+  if (!canTurn()) return;
+  const d = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key];
+  let m; if (d) m = st.minutes + d; else if (e.key === 'Home') m = 1; else if (e.key === 'End') m = maxMinutes(); else return;
+  e.preventDefault(); setMinutes(m);
+});
+$('minus').addEventListener('click', () => setMinutes(st.minutes - 1));
+$('plus').addEventListener('click', () => setMinutes(st.minutes + 1));
+$('ctl').addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (b) setMinutes(Number(b.dataset.m)); });
+$('copyRent').addEventListener('click', () => copy($('rentCmd').textContent, $('copyRent'), 'Copy the rent command'));
+$('copySsh').addEventListener('click', () => copy($('sshCmd').textContent, $('copySsh'), 'Copy command'));
+
+/* ---------- the hero ---------- */
+const rig = $('rig'), lid = $('lid');
+function lidTo(deg, lit, scr, led) { lid.style.setProperty('--a', deg + 'deg'); rig.classList.toggle('is-lit', !!lit); rig.dataset.scr = scr || ''; rig.dataset.led = led || ''; }
+function setH1(id, rest) {
+  const h = $('h1');
+  if (id === null) { h.className = 'h1 h1--plain'; h.textContent = rest; return; }
+  h.className = 'h1'; h.replaceChildren(el('span', 'h1__id', id), el('span', 'h1__rest', rest));
+}
+function fact(label, value) { const d = el('div'); d.append(el('dt', '', label)); const dd = el('dd'); dd.append(value); d.append(dd); return d; }
+
+function applyHero(m, h, now) {
+  const k = h.kind, p = h.pass || null, id = m ? m.id : '';
+  document.body.dataset.hero = k;
+  show($('steps'), k === 'free' || k === 'loading' || k === 'empty');
+  show($('prog'), k === 'signing'); show($('refund'), k === 'signing');
+  show($('use'), k === 'active' && !!p);
+  show($('rent'), k === 'free'); show($('ctl'), k === 'free');
+  show($('pfacts'), (k === 'active' || k === 'signing' || k === 'ended') && !!p);
+  const lede = $('lede');
+
+  /* which drawing is on the desk */
+  const kind = m ? kindOf(m.id) : 'laptop';
+  const alt = !!(dev && dev.deviceMarkup && kind !== 'laptop');
+  const altdev = $('altdev');
+  if (alt) {
+    if (altdev.dataset.kind !== kind) { try { altdev.innerHTML = dev.deviceMarkup(kind); altdev.dataset.kind = kind; } catch { altdev.dataset.kind = ''; } }
+    const root = altdev.firstElementChild;
+    if (root) root.dataset.state = k === 'signing' ? 'signing' : k === 'active' ? 'active' : k === 'ended' ? 'ended' : 'free';
+  }
+  const useAlt = alt && !!altdev.firstElementChild;
+  show(altdev, useAlt); $('lt').classList.toggle('is-off', useAlt); rig.classList.toggle('is-alt', useAlt);
+  $('step3').textContent = useAlt ? 'Run it in a terminal: the machine wakes in about 7 seconds' : 'Run it in a terminal: the lid opens in about 7 seconds';
+  st.alt = useAlt;
+
+  /* the note pinned over the shut lid */
+  const shut = (k === 'free' || k === 'paused' || k === 'ended') && !!m;
+  $('pin').classList.toggle('is-off', !shut || useAlt && k !== 'free' && k !== 'paused' && k !== 'ended');
+  if (m) {
+    $('pinName').textContent = m.id;
+    $('pinPrice').textContent = near(m.price_per_minute) + ' NEAR';
+    $('pinConn').textContent = `${m.login_user}@${m.host}:${m.port}`;
+    const ps = $('pinStatus');
+    ps.textContent = k === 'paused' ? 'Paused by its owner' : k === 'ended' ? 'Session ended, light off' : 'Free now';
+    ps.className = 'status' + (k === 'free' ? '' : ' status--off');
+    $('pinNote').textContent = k === 'ended' ? (useAlt ? 'Light off. The old pass cannot open it.' : 'Shut again. The old pass cannot open it.') : k === 'paused' ? 'It cannot be rented until its owner resumes it.' : useAlt ? 'Asleep. It wakes only for a pass the network has signed.' : 'The lid is shut. It opens only for a pass the network has signed.';
+  }
+  rig.setAttribute('aria-label', m ? `${id}: ${k === 'active' ? 'lid open, in use' : k === 'signing' ? 'lid opening, pass being signed' : k === 'ended' ? 'lid shut, session ended' : k === 'paused' ? 'lid shut, paused' : 'lid shut, free to rent'}` : 'No machine selected');
+
+  const facts = [];
+  if (k === 'free') {
+    setH1(null, 'Rent a computer by the minute.');
+    lede.textContent = (useAlt ? 'Pay for the minutes you need and the machine wakes' : 'Pay for the minutes you need and the lid opens') + ': a signed pass logs the renter in to that one machine. When time is up it shuts by itself. No sign-up, no shared passwords.';
+    lidTo(0, false, '', 'free');
+    const price = parseYocto(m.price_per_minute) ?? 0n, fee = feeYocto(), time = price * BigInt(st.minutes);
+    $('sumCalc').textContent = `${near(price)} NEAR × ${minsText(st.minutes)}`;
+    $('sumTime').textContent = near(time) + ' NEAR';
+    $('sumFee').textContent = near(fee) + ' NEAR';
+    $('sumTotal').textContent = near(time + fee);
+    $('rentCmd').textContent = `bin/gatepass rent ${m.id} --minutes ${st.minutes}`;
+    document.querySelectorAll('#ctl [data-m]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.m) === st.minutes)));
+  } else if (k === 'signing') {
+    setH1(id, useAlt ? 'is being unlocked' : 'is being opened');
+    lede.replaceChildren(`Pass #${p.serial} for `, acct(p.buyer), `, ${minsText(p.minutes)}. This takes about 7 seconds.`);
+    $('pgMinutes').textContent = minsText(p.minutes);
+    $('bootLine').textContent = `Signing pass #${p.serial}`;
+    facts.push(fact('Pass', '#' + p.serial), fact('Buyer', acct(p.buyer)), fact('Time', minsText(p.minutes)));
+  } else if (k === 'active') {
+    setH1(id, `is in use until ${shortClock(h.end)}`);
+    if (p) lede.replaceChildren(`Pass #${p.serial}, bought by `, acct(p.buyer), '. Nobody else can rent this machine until the time is up.');
+    else lede.textContent = 'A pass is live on this machine. Nobody else can rent it until the time is up.';
+    lidTo(104, true, 'live', 'busy');
+    $('scrTop').textContent = `${id} is in use until ${shortClock(h.end)}`;
+    $('scrBot').textContent = p ? `Pass #${p.serial} for ${p.buyer}` : 'A pass is live';
+    show($('barWrap'), !!p);
+    if (p) {
+      $('sshCmd').textContent = `bin/gatepass ssh ${p.serial} -- <command>`;
+      facts.push(fact('Pass', '#' + p.serial), fact('Valid until', fullClock(h.end)), fact('Time paid for', minsText(p.minutes)),
+        fact('Price paid', `${near(p.paid)} NEAR + ${near(feeYocto())} storage fee`), fact('Buyer', acct(p.buyer)), fact('Contract', acct(cfg.contract)));
+    }
+  } else if (k === 'ended') {
+    setH1(id, useAlt ? 'is free again' : 'has shut');
+    lede.textContent = `Session ended at ${fullClock(h.end)}. Files wiped. Free for the next renter.`;
+    lidTo(0, false, '', '');
+    if (p) facts.push(fact('Pass', '#' + p.serial + ', expired'), fact('Buyer', acct(p.buyer)), fact('Price paid', `${near(p.paid)} NEAR + ${near(feeYocto())} storage fee`));
+  } else if (k === 'paused') {
+    setH1(id, 'is paused');
+    lede.textContent = 'Its owner has paused renting. Pick another machine below.';
+    lidTo(0, false, '', '');
+  } else if (k === 'empty') {
+    setH1(null, 'No machines are listed yet.');
+    lede.textContent = `Nothing is listed on ${cfg.contract}. An owner lists a machine with scripts/host-up.sh and it appears here.`;
+    lidTo(0, false, '', '');
+  } else {
+    setH1(null, 'Rent a computer by the minute.');
+    lede.textContent = st.error ? `The chain is not answering yet. Retrying every 2 seconds.` : `Reading machines from ${cfg.contract}.`;
+    lidTo(0, false, '', '');
+  }
+  $('pfacts').replaceChildren(...facts);
+}
+
+function tickHero(now) {
+  const { m, h } = hero(now);
+  const stage = h.kind === 'signing' ? (now - h.since > 3000 ? 1 : 0) : 0;
+  const sig = [m ? m.id : '', h.kind, h.pass ? h.pass.serial : '', h.pass ? h.pass.status : '', h.end ? Math.round(h.end / 1000) : '', st.minutes, m ? m.price_per_minute : '', st.config ? st.config.pass_storage_fee : '', st.error ? 1 : 0, m ? [m.host, m.port, m.login_user].join() : ''].join('|');
+  if (sig !== st.sig.hero) { st.sig.hero = sig; applyHero(m, h, now); }
+  if (h.kind === 'signing') lidTo(stage ? 74 : 40, false, 'boot', 'busy');
+  if (h.kind === 'active') {
+    const left = Math.max(0, Math.ceil((h.end - now) / 1000)), text = mmss(left);
+    const count = $('count');
+    if (count.dataset.t !== text) {
+      count.dataset.t = text;
+      count.replaceChildren(...[...text].map((ch) => el('span', ch === ':' ? 'colon' : '', ch)));
+      count.classList.toggle('is-long', text.length > 5);
+      const big = $('bigCount'); big.textContent = text;
+    }
+    if (h.pass) $('bar').style.transform = `scaleX(${Math.min(1, left / Math.max(60, (Number(h.pass.minutes) || 1) * 60)).toFixed(4)})`;
+    const last = left < 60;
+    rig.classList.toggle('is-last', last);
+    show($('warn'), last);
+    if (last) $('warn').textContent = `Less than a minute left. The session is cut off and the files are wiped at ${fullClock(h.end)}.`;
+  } else { rig.classList.remove('is-last'); show($('warn'), false); }
+  show($('bigCount'), h.kind === 'active' && !!st.alt);
+  renderDial(h, now);
+}
+
+function tickLive(now) {
+  const live = $('live'), t = $('liveText');
+  let text, cls = 'live';
+  if (PREVIEW && st.preview) { text = 'Preview state, not live data'; cls += ' is-bad'; }
+  else if (st.error) { text = st.loaded ? 'Chain not answering, retrying' : 'Chain not reachable, retrying'; cls += ' is-bad'; live.title = st.error; }
+  else if (st.loaded) { text = 'Live from the chain'; cls += ' is-ok'; live.title = 'Last read ' + Math.max(0, Math.round((now - st.lastOk) / 1000)) + ' s ago'; }
+  else text = 'Reading the chain';
+  if (t.textContent !== text) t.textContent = text;
+  if (live.className !== cls) live.className = cls;
+}
+
+function tick() { const now = Date.now(); tickHero(now); tickShelf(now); tickPasses(now); tickLive(now); }
+
+/* ---------- sections ---------- */
+function route() {
+  const h = location.hash.slice(1) || 'machines';
+  const v = h === 'owners' || h === 'agents' ? h : 'machines';
+  st.view = v;
+  document.querySelectorAll('[data-view]').forEach((s) => { s.hidden = s.dataset.view !== v; });
+  document.querySelectorAll('.nav a').forEach((a) => { if (a.dataset.nav === (h === 'passes' ? 'passes' : v)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  if (h === 'passes') $('passes').scrollIntoView(); else window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- preview switcher: only with ?preview=1 ---------- */
+function markPreview() { document.querySelectorAll('#mock [data-pv]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pv === (st.preview ? st.preview.kind : 'live')))); }
+if (PREVIEW) {
+  $('mock').hidden = false; markPreview();
+  $('mock').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pv]'); if (!b) return;
+    st.preview = b.dataset.pv === 'live' ? null : { kind: b.dataset.pv, t0: Date.now() };
+    st.sig.hero = ''; markPreview();
+    if (st.view !== 'machines') location.hash = 'machines';
+    tick(); window.scrollTo(0, 0);
+  });
+} else { document.body.style.paddingBottom = '0'; }
+
+try { if (dev && typeof dev.logoMarkup === 'string' && dev.logoMarkup.includes('<svg')) $('brandMark').innerHTML = dev.logoMarkup; } catch { /* keep the built-in mark */ }
+const cl = $('contractLink'); cl.textContent = cfg.contract + ' on NEAR testnet'; cl.href = cfg.explorer + '/address/' + encodeURIComponent(cfg.contract);
+route(); tick(); refresh(); setInterval(tick, TICK_MS);
+</script>
 </body>
 </html>

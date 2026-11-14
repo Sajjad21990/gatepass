@@ -31,8 +31,9 @@ as_renter() { if [ -f .env.renter ]; then GATEPASS_ENV_FILE=.env.renter "$@"; el
 [ -f .env ] || { echo "No .env found. Run: node scripts/create-testnet-account.mjs" >&2; exit 1; }
 OWNER=$(sed -n 's/^NEAR_ACCOUNT_ID=//p' .env)
 BASE=demo-$(node -e 'console.log(require("crypto").createHash("sha256").update(process.argv[1]).digest("hex").slice(0,8))' "$OWNER")
-SMALL=$BASE
-BIG=$BASE-big
+# The two machines. Override the names with GATEPASS_DEMO_SMALL / GATEPASS_DEMO_BIG.
+SMALL=${GATEPASS_DEMO_SMALL:-$BASE}
+BIG=${GATEPASS_DEMO_BIG:-$BASE-big}
 TASK=${1:-"How many prime numbers are there below 50000? Work it out by actually running code, not from memory."}
 
 step "1. Two machines for rent, owned by $OWNER"

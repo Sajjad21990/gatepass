@@ -103,14 +103,31 @@ deployed on testnet at `gatepass.testnet`.
    A machine has one renter at a time, so if you run the demo again within a
    minute it first prints `... is in use for N more seconds; waiting ...`.
 
-4. Optional: watch it in the dashboard while the demo runs.
+4. Watch it in the web page while the demo runs. Start this first, in a
+   second terminal:
 
    ```bash
    node scripts/dashboard.ts
    ```
 
-   Open http://127.0.0.1:4173. You should see the machines with their CA
-   keys, and each pass counting down and flipping to "Expired".
+   Open http://127.0.0.1:4173. The page reads the contract every 2 seconds, so
+   it follows a rental as it happens:
+
+   | When | What the page shows |
+   | --- | --- |
+   | The machine is free | A laptop with its lid shut and a breathing green light, a timer dial to set minutes, the price, and the exact `bin/gatepass rent ...` command to copy |
+   | The demo pays (step 3) | "is being opened": the lid lifts in stages while three lines say what the contract and NEAR Chain Signatures are doing |
+   | The pass is live (steps 4 and 5) | The lid is open and the screen counts down to the paid deadline; the dial runs down with it |
+   | Time is up (step 6) | "has shut": the lid closes, the light goes off, "Files wiped. Free for the next renter." |
+
+   Machines whose name contains `gpu` (or ends in `-big`) are drawn as a GPU
+   tower whose fans spin while rented, and names containing `arm`, `pi` or
+   `tiny` as a small single-board computer whose lights come on. Below the
+   stage are all machines with live availability, every pass, and pages for
+   owners and agents. Paying from the browser is not built: renting is done
+   with the CLI or by the agent, and the page shows it live. Add `?preview=1`
+   to the address to step through every state without renting, and
+   `/board.html` is the earlier plain table view.
 
 ### Let an AI agent rent by itself
 
@@ -197,6 +214,7 @@ bin/gatepass host-setup demo-xxxxxxxx              # that machine's CA key and s
 bin/gatepass register my-box --host 203.0.113.7 --port 22 --user renter --price 0.05
 bin/gatepass withdraw my-box                       # owner only
 bin/gatepass set-host-key my-box /etc/ssh/ssh_host_ed25519_key.pub   # owner only
+bin/gatepass pause my-box                          # owner only; "resume" reopens it
 bin/gatepass refresh-ca my-box                     # re-read a machine's CA key from the MPC
 ```
 
@@ -457,7 +475,7 @@ What can still get around it:
 | `cli/` | The `gatepass` CLI (TypeScript, run directly by Node). |
 | `agent/` | `agent.ts`: an agent with a wallet and a budget that rents machines by itself. |
 | `host/` | The demo host (two sandboxed machines in `docker-compose.yml`, each behind a `host/gate` forwarder): Dockerfile, `sshd_config`, the `gatepass-session` deadline wrapper, and the root-side `gatepass-principals`, `gatepass-reaper` and `gatepass-wipe`. |
-| `dashboard/` | Read-only web page: machines, passes with live countdown, earnings. No wallet needed. |
+| `dashboard/` | The web page: a live view of the contract where the rented machine opens and shuts with its pass. `index.html` is the page, `devices.js` and `devices.css` draw the GPU tower and the small board, `board.html` is the earlier table view. No wallet needed. |
 | `scripts/` | `demo.sh`, `agent-demo.sh`, `host-up.sh` (list a real machine), `deploy.ts`, `dashboard.ts`, `create-testnet-account.mjs`. |
 
 ## Built with

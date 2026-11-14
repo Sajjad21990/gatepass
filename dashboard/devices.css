@@ -1,0 +1,86 @@
+/* Gatepass hero devices: the GPU tower and the single-board computer.
+   Everything is driven by data-state on the root:
+   free | signing | active | ended.  All selectors live under .gp-device. */
+
+.gp-device{
+  --gp-light:#FFF1C7;
+  --gp-free:#3FD98A;
+  --gp-busy:#FFB23E;
+  --gp-off:#5F6D72;
+  position:relative;display:block;width:100%;max-width:520px;aspect-ratio:520/380;margin-inline:auto;
+}
+.gp-device svg{display:block;width:100%;height:100%;overflow:visible}
+
+/* shared: the drawing dims a little when the pass has ended */
+.gp-device .gp-body{transition:filter .8s}
+.gp-device[data-state="ended"] .gp-body{filter:brightness(.74) saturate(.7)}
+
+/* shared: a lit layer sits on top of every lamp and fades in */
+.gp-device .gp-on{opacity:0;transition:opacity .45s}
+.gp-device .gp-on--pwr{filter:drop-shadow(0 0 4px rgba(63,217,138,.9))}
+.gp-device .gp-on--act{filter:drop-shadow(0 0 4px rgba(255,178,62,.9))}
+.gp-device .gp-lamp{fill:#93A1A5}
+.gp-device .gp-lamp--dark{fill:var(--gp-off)}
+
+.gp-device[data-state="free"] .gp-on--pwr{opacity:1;animation:gp-breathe 3.6s ease-in-out infinite}
+.gp-device[data-state="signing"] .gp-on--pwr,
+.gp-device[data-state="active"] .gp-on--pwr{opacity:1}
+.gp-device[data-state="signing"] .gp-on--act{opacity:1;transition-delay:.7s}
+.gp-device[data-state="signing"] .gp-on--link{opacity:1;transition-delay:1.4s}
+.gp-device[data-state="active"] .gp-on--link{opacity:1}
+.gp-device[data-state="active"] .gp-on--act{opacity:1;animation:gp-blink 2.1s steps(1,end) infinite}
+.gp-device[data-state="active"] .gp-on--link2{opacity:1;animation:gp-blink 1.3s steps(1,end) infinite reverse}
+
+@keyframes gp-breathe{0%,100%{opacity:.25}50%{opacity:1}}
+@keyframes gp-blink{0%{opacity:1}9%{opacity:.08}15%{opacity:1}24%{opacity:.08}31%{opacity:1}56%{opacity:.08}63%{opacity:1}71%{opacity:.08}78%{opacity:1}}
+@keyframes gp-spin{to{transform:rotate(360deg)}}
+
+/* ---------- tower ---------- */
+.gp-device .gp-t-spill{opacity:0;transition:opacity 1.2s}
+.gp-device .gp-t-glow{opacity:0;transition:opacity 1.2s}
+.gp-device .gp-t-strip{fill:#2A3A41;transition:fill .8s}
+.gp-device .gp-t-part{fill:#18272D;transition:fill 1s}
+.gp-device .gp-t-part--2{fill:#1F3038;transition:fill 1s}
+.gp-device .gp-fan-well{fill:#0B1418}
+.gp-device .gp-fan-hub{fill:#1A282E}
+.gp-device .gp-fan-ring{fill:none;stroke:#2E3F46;stroke-width:2.2;transition:stroke .8s}
+.gp-device .gp-fan{fill:#2B3B42;transform-box:fill-box;transform-origin:50% 50%;transition:fill .8s}
+
+.gp-device[data-state="signing"] .gp-t-glow{opacity:.3;transition-delay:1.1s}
+.gp-device[data-state="signing"] .gp-t-spill{opacity:.16;transition-delay:1.1s}
+.gp-device[data-state="signing"] .gp-t-strip{fill:#B9B193;transition-delay:.8s}
+.gp-device[data-state="signing"] .gp-fan{animation:gp-spin 7s linear .45s infinite}
+
+.gp-device[data-state="active"] .gp-t-glow{opacity:1}
+.gp-device[data-state="active"] .gp-t-glow--front{opacity:.8}
+.gp-device[data-state="active"] .gp-t-spill{opacity:1}
+.gp-device[data-state="active"] .gp-t-strip{fill:var(--gp-light)}
+.gp-device[data-state="active"] .gp-t-part{fill:#14232A}
+.gp-device[data-state="active"] .gp-fan-ring{stroke:var(--gp-light)}
+.gp-device[data-state="active"] .gp-fan{fill:#50636A;animation:gp-spin 2.2s linear infinite}
+
+/* ---------- board ---------- */
+.gp-device .gp-b-shadow{fill:rgba(2,22,28,.62);filter:blur(9px)}
+.gp-device .gp-b-glow{fill:var(--gp-light);filter:blur(24px);opacity:0;transition:opacity 1.2s}
+.gp-device .gp-b-wash{fill:var(--gp-light);opacity:0;transition:opacity 1.2s}
+.gp-device[data-state="signing"] .gp-b-glow{opacity:.14;transition-delay:1.6s}
+.gp-device[data-state="active"] .gp-b-glow{opacity:.62}
+.gp-device[data-state="active"] .gp-b-wash{opacity:.07}
+
+.gp-device .gp-box polygon{stroke-linejoin:round;stroke-width:1}
+.gp-device .gp-metal .gp-t{fill:#E9EDEE;stroke:#F6F8F8}
+.gp-device .gp-metal .gp-l{fill:#C5CDD0;stroke:#D6DCDE}
+.gp-device .gp-metal .gp-f{fill:#A4AFB4;stroke:#B3BCC0}
+.gp-device .gp-black .gp-t{fill:#24343B;stroke:#33454C}
+.gp-device .gp-black .gp-l{fill:#17232A;stroke:#17232A}
+.gp-device .gp-black .gp-f{fill:#0F1A1F;stroke:#0F1A1F}
+.gp-device .gp-chip .gp-t{fill:url(#gpB-chip);stroke:#F6F8F8}
+.gp-device .gp-chip .gp-l{fill:#AEB8BC;stroke:#AEB8BC}
+.gp-device .gp-chip .gp-f{fill:#8D999E;stroke:#8D999E}
+.gp-device .gp-hole{fill:#0B1C22}
+.gp-device .gp-pin{stroke:#E3B757;stroke-width:2.4;stroke-linecap:round}
+.gp-device .gp-trace{fill:none;stroke:#49B79B;stroke-width:1.7;stroke-linejoin:round;opacity:.55}
+
+@media (prefers-reduced-motion:reduce){
+  .gp-device *,.gp-device[data-state] *{animation:none!important;transition:none!important}
+}
