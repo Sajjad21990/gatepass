@@ -24,6 +24,14 @@ GP=bin/gatepass
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 json() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
+# The owner publishes the machine's SSH host key on-chain (once, or when it
+# changes), so the renter's ssh accepts only that key.
+publish_host_key() {
+  local key; key=$(docker compose exec -T "$2" cat /etc/ssh/ssh_host_ed25519_key.pub | cut -d' ' -f1,2)
+  local info; info=$($GP machines --json | json "(m=>m?[m.owner,(m.host_key||'').split(' ').slice(0,2).join(' ')].join('|'):'')(v.find(m=>m.id==='$1'))")
+  [ "${info%%|*}" = "$OWNER" ] || return 0
+  [ "${info#*|}" = "$key" ] || $GP set-host-key "$1" "$key"
+}
 as_renter() { if [ -f .env.renter ]; then GATEPASS_ENV_FILE=.env.renter "$@"; else "$@"; fi; }
 
 [ -f .env ] || { echo "No .env found. Run: node scripts/create-testnet-account.mjs" >&2; exit 1; }
@@ -40,6 +48,7 @@ step "2. Start the demo host and give it the CA key of $MACHINE"
 docker compose up -d --build --quiet-pull >/dev/null 2>&1 || docker compose up -d --build
 $GP host-setup "$MACHINE" --write host/ca/gatepass_ca.pub
 ssh-keygen -l -f host/ca/gatepass_ca.pub
+publish_host_key "$MACHINE" host
 
 step "3. Pay for 1 minute on $MACHINE and get a pass"
 SERIAL=$(as_renter $GP rent "$MACHINE" --minutes 1 --no-ssh --json | json 'v.serial')

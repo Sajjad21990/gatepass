@@ -73,6 +73,26 @@ pub struct Machine {
     pub ca_public_key: Option<String>,
 }
 
+/// A machine as views return it: the stored record plus what is derived.
+#[near(serializers = [json])]
+pub struct MachineView {
+    #[serde(flatten)]
+    pub machine: Machine,
+    /// Unix seconds until which the machine is taken by its current pass;
+    /// 0 when it is free. Only one pass can be active on a machine at a time.
+    pub busy_until: u64,
+    /// The machine's SSH host key (`ssh-ed25519 AAAA...`), if the owner has
+    /// published it. Renters pin it, so they know they reached this machine.
+    pub host_key: Option<String>,
+}
+
+impl std::ops::Deref for MachineView {
+    type Target = Machine;
+    fn deref(&self) -> &Machine {
+        &self.machine
+    }
+}
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PassStatus {
@@ -145,6 +165,8 @@ pub struct Quote {
     pub price: NearToken,
     pub storage_fee: NearToken,
     pub total: NearToken,
+    /// Unix seconds until which the machine is in use; 0 if it can be rented now.
+    pub busy_until: u64,
 }
 
 /// The MPC contract's answer for an Ed25519 request.
@@ -193,7 +215,7 @@ impl Gatepass {
     }
 
     #[private]
-    pub fn on_ca_key(&mut self, machine_id: String, #[callback_result] result: Result<String, PromiseError>) -> Machine {
+    pub fn on_ca_key(&mut self, machine_id: String, #[callback_result] result: Result<String, PromiseError>) -> MachineView {
         let key = result.unwrap_or_else(|_| env::panic_str("MPC contract did not return a derived key"));
         let parsed: PublicKey = key.parse().unwrap_or_else(|_| env::panic_str("MPC returned an unparsable key"));
         let bytes = parsed.as_bytes();
@@ -204,7 +226,7 @@ impl Gatepass {
         let machine = self.machines.get_mut(&machine_id).unwrap_or_else(|| env::panic_str("no such machine"));
         machine.ca_public_key = Some(line.clone());
         emit("ca_key_set", json!({ "machine_id": machine_id, "ca_public_key": line, "mpc_key": key }));
-        machine.clone()
+        self.machine_view(&machine_id).unwrap()
     }
 
     /// The line a machine's host puts in its `TrustedUserCAKeys` file.
@@ -259,16 +281,27 @@ impl Gatepass {
         machine.active = active;
     }
 
-    pub fn get_machine(&self, machine_id: String) -> Option<Machine> {
-        self.machines.get(&machine_id).cloned()
+    /// Owner only: publish the machine's SSH host key (`ssh-ed25519 AAAA...`,
+    /// the line in /etc/ssh/ssh_host_ed25519_key.pub). Renters pin it instead
+    /// of trusting whatever answers at the address.
+    pub fn set_host_key(&mut self, machine_id: String, host_key: String) {
+        let machine = self.machines.get(&machine_id).unwrap_or_else(|| env::panic_str("no such machine"));
+        require!(env::predecessor_account_id() == machine.owner, "only the machine owner can do this");
+        let pk = cert::parse_pubkey_line(&host_key).unwrap_or_else(|_| env::panic_str("host_key must be an ssh-ed25519 public key line"));
+        env::storage_write(&host_key_storage_key(&machine_id), &pk);
+        emit("host_key_set", json!({ "machine_id": machine_id, "host_key": cert::pubkey_line(&pk, &machine_id) }));
     }
 
-    pub fn list_machines(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<Machine> {
+    pub fn get_machine(&self, machine_id: String) -> Option<MachineView> {
+        self.machine_view(&machine_id)
+    }
+
+    pub fn list_machines(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<MachineView> {
         self.machines
-            .values()
+            .keys()
             .skip(from_index.unwrap_or(0) as usize)
             .take(limit.unwrap_or(MAX_PAGE).min(MAX_PAGE) as usize)
-            .cloned()
+            .filter_map(|id| self.machine_view(id))
             .collect()
     }
 
@@ -280,18 +313,25 @@ impl Gatepass {
         let machine = self.machines.get(&machine_id).unwrap_or_else(|| env::panic_str("no such machine"));
         let price = machine.price_per_minute.checked_mul(minutes as u128).unwrap_or_else(|| env::panic_str("price overflow"));
         let total = price.checked_add(PASS_STORAGE_FEE).unwrap_or_else(|| env::panic_str("price overflow"));
-        Quote { machine_id, minutes, price, storage_fee: PASS_STORAGE_FEE, total }
+        let busy_until = self.busy_until(&machine_id);
+        Quote { machine_id, minutes, price, storage_fee: PASS_STORAGE_FEE, total, busy_until }
     }
 
     /// Pay for `minutes` on a machine. `ssh_pubkey` is the renter's own
     /// `ssh-ed25519 AAAA...` public key. Attach the `total` from `quote`
     /// (anything above it is returned). Resolves to the signed pass, or
     /// refunds the whole payment if the MPC network does not sign.
+    ///
+    /// A machine has one renter at a time: while a pass is active (or being
+    /// signed), nobody else can buy one for that machine.
     #[payable]
     pub fn buy_pass(&mut self, machine_id: String, ssh_pubkey: String, minutes: u32) -> Promise {
         require!(env::prepaid_gas() >= MIN_BUY_GAS, "attach at least 100 Tgas");
         require!((1..=MAX_MINUTES).contains(&minutes), "minutes must be between 1 and 240");
         let renter_pk = cert::parse_pubkey_line(&ssh_pubkey).unwrap_or_else(|e| env::panic_str(e));
+        let now = env::block_timestamp() / 1_000_000_000;
+        let busy_until = self.busy_until(&machine_id);
+        require!(busy_until == 0, format!("this machine is in use for another {} seconds (until unix time {busy_until})", busy_until.saturating_sub(now)));
 
         let machine = self.machines.get_mut(&machine_id).unwrap_or_else(|| env::panic_str("no such machine"));
         require!(machine.active, "this machine is not accepting passes");
@@ -312,7 +352,6 @@ impl Gatepass {
         let serial = self.next_serial;
         self.next_serial += 1;
 
-        let now = env::block_timestamp() / 1_000_000_000;
         let valid_after = now - CLOCK_SKEW_SECONDS;
         let valid_before = now + minutes as u64 * 60;
 
@@ -462,6 +501,30 @@ impl Gatepass {
 }
 
 impl Gatepass {
+    /// Unix seconds until which the machine's latest pass holds it; 0 if free.
+    /// Passes on a machine never overlap, so only the latest one can be live.
+    /// A pass that is still being signed counts; a failed one does not.
+    fn busy_until(&self, machine_id: &String) -> u64 {
+        let Some(machine) = self.machines.get(machine_id) else { return 0 };
+        if machine.passes_issued == 0 {
+            return 0;
+        }
+        let now = env::block_timestamp() / 1_000_000_000;
+        self.machine_passes
+            .get(&(machine_id.clone(), machine.passes_issued - 1))
+            .and_then(|serial| self.passes.get(serial))
+            .filter(|pass| pass.status != PassStatus::Failed && pass.valid_before > now)
+            .map_or(0, |pass| pass.valid_before)
+    }
+
+    fn machine_view(&self, machine_id: &String) -> Option<MachineView> {
+        let machine = self.machines.get(machine_id)?.clone();
+        let host_key = env::storage_read(&host_key_storage_key(machine_id))
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+            .map(|pk| cert::pubkey_line(&pk, machine_id));
+        Some(MachineView { machine, busy_until: self.busy_until(machine_id), host_key })
+    }
+
     fn fetch_ca_key(&self, machine_id: String) -> Promise {
         let args = json!({
             "path": ca_path_for(&self.ca_path, &machine_id),
@@ -539,6 +602,11 @@ fn key_id(machine_id: &str, buyer: &AccountId, serial: u64) -> String {
 /// (no '/' or ','), so two machines can never share a path.
 fn ca_path_for(prefix: &str, machine_id: &str) -> String {
     format!("{prefix}/{machine_id}")
+}
+
+/// Host keys live under their own storage prefix, next to the collections.
+fn host_key_storage_key(machine_id: &str) -> Vec<u8> {
+    [b"hostkey:".as_slice(), machine_id.as_bytes()].concat()
 }
 
 fn is_slug(s: &str, max: usize) -> bool {

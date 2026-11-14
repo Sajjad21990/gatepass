@@ -69,14 +69,17 @@ async function cli(args: string[], timeoutMs = 180_000) {
 
 // ---------- tools: what the agent can do ----------
 
-interface Machine { id: string; owner: string; host: string; port: number; login_user: string; price_per_minute: string; active: boolean; ca_public_key: string | null; }
+interface Machine { id: string; owner: string; host: string; port: number; login_user: string; price_per_minute: string; active: boolean; ca_public_key: string | null; busy_until: number; }
 
 const tools = {
   async list_machines() {
     const all = await view<Machine[]>('list_machines', {});
     return all
       .filter((m) => m.active && m.ca_public_key && (!owners || owners.includes(m.owner)) && (!allowed || allowed.includes(m.id)))
-      .map((m) => ({ machine_id: m.id, owner: m.owner, price_per_minute_near: fromYocto(m.price_per_minute), connect: `${m.login_user}@${m.host}:${m.port}` }));
+      .map((m) => {
+        const busyFor = m.busy_until - Math.floor(Date.now() / 1000);
+        return { machine_id: m.id, owner: m.owner, price_per_minute_near: fromYocto(m.price_per_minute), connect: `${m.login_user}@${m.host}:${m.port}`, available: busyFor <= 0 ? 'now' : `in ${busyFor} seconds (another renter has it; one renter at a time)` };
+      });
   },
 
   async get_quote({ machine_id, minutes }: { machine_id: string; minutes: number }) {
@@ -110,7 +113,7 @@ const tools = {
 };
 
 const toolSpecs = [
-  { name: 'list_machines', description: 'List machines that can be rented right now, with their price per minute in NEAR.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'list_machines', description: 'List machines for rent with their price per minute in NEAR and whether each is available now. A machine has one renter at a time.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'get_quote', description: 'Get the total cost in NEAR of renting a machine for a number of minutes, and whether it fits the remaining budget.', parameters: { type: 'object', properties: { machine_id: { type: 'string' }, minutes: { type: 'integer', minimum: 1, maximum: 240 } }, required: ['machine_id', 'minutes'], additionalProperties: false } },
   { name: 'rent_machine', description: 'Pay from your NEAR wallet for a number of minutes on a machine. Returns a pass_serial. The paid time starts immediately and the session is cut off when it ends.', parameters: { type: 'object', properties: { machine_id: { type: 'string' }, minutes: { type: 'integer', minimum: 1, maximum: 240 } }, required: ['machine_id', 'minutes'], additionalProperties: false } },
   { name: 'run_command', description: 'Run one shell command (sh) on a machine you have rented, using its pass_serial. Returns exit code, stdout and stderr. The machine is a minimal Linux box.', parameters: { type: 'object', properties: { pass_serial: { type: 'integer' }, command: { type: 'string' } }, required: ['pass_serial', 'command'], additionalProperties: false } },

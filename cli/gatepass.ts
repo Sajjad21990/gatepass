@@ -8,6 +8,7 @@
 //   gatepass host-setup <machine> [--write <file>]
 //   gatepass register <id> --host H --port P --user U --price <NEAR per minute>
 //   gatepass withdraw <machine>
+//   gatepass set-host-key <machine> "<ssh-ed25519 AAAA...>"
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,6 +22,7 @@ interface Machine {
   id: string; owner: string; host: string; port: number; login_user: string;
   price_per_minute: string; earnings: string; total_earned: string; passes_issued: number; active: boolean;
   ca_public_key: string | null;
+  busy_until: number; host_key: string | null;
 }
 interface Pass {
   serial: number; machine_id: string; buyer: string; key_id: string; ssh_pubkey: string;
@@ -62,21 +64,36 @@ function passState(p: Pass): string {
   return left > 0 ? `active, ${left}s left` : 'expired';
 }
 
+function machineState(m: Machine): string {
+  if (!m.active) return 'paused';
+  const left = m.busy_until - Math.floor(Date.now() / 1000);
+  return left > 0 ? `in use, free in ${left}s` : 'free';
+}
+
 function table(rows: string[][]) {
   const widths = rows[0].map((_, i) => Math.max(...rows.map((r) => r[i].length)));
   for (const r of rows) console.log(r.map((c, i) => c.padEnd(widths[i])).join('  ').trimEnd());
 }
 
-function sshArgs(dir: string, pass: Pick<Pass, 'host' | 'port' | 'login_user'>, cmd: string[]): string[] {
+type Target = Pick<Pass, 'host' | 'port' | 'login_user'> & { host_key?: string | null };
+
+function sshArgs(dir: string, pass: Target, cmd: string[]): string[] {
+  const knownHosts = path.join(dir, 'known_hosts');
+  if (pass.host_key) {
+    // The owner published this machine's host key on-chain: accept only that key.
+    const name = pass.port === 22 ? pass.host : `[${pass.host}]:${pass.port}`;
+    fs.writeFileSync(knownHosts, `${name} ${pass.host_key.split(/\s+/).slice(0, 2).join(' ')}\n`);
+  }
   return [
     '-F', 'none', // ignore ~/.ssh/config: only this pass's key and options apply
     '-i', path.join(dir, 'key'),
     '-o', `CertificateFile=${path.join(dir, 'key-cert.pub')}`,
     '-o', 'IdentitiesOnly=yes',
     '-o', 'IdentityAgent=none',
-    // Trust-on-first-use, kept per pass so the user's own known_hosts is untouched.
-    '-o', 'StrictHostKeyChecking=accept-new',
-    '-o', `UserKnownHostsFile=${path.join(dir, 'known_hosts')}`,
+    // With a pinned host key, anything else is refused. Without one, trust on
+    // first use, kept per pass so the user's own known_hosts is untouched.
+    '-o', `StrictHostKeyChecking=${pass.host_key ? 'yes' : 'accept-new'}`,
+    '-o', `UserKnownHostsFile=${knownHosts}`,
     '-o', 'LogLevel=ERROR',
     '-o', 'ConnectTimeout=10',
     '-p', String(pass.port),
@@ -86,9 +103,9 @@ function sshArgs(dir: string, pass: Pick<Pass, 'host' | 'port' | 'login_user'>, 
   ];
 }
 
-function runSsh(dir: string, pass: Pick<Pass, 'host' | 'port' | 'login_user'>, cmd: string[]): number {
+function runSsh(dir: string, pass: Target, cmd: string[]): number {
   const args = sshArgs(dir, pass, cmd);
-  say(`$ ssh ${pass.login_user}@${pass.host} -p ${pass.port}${cmd.length ? ` ${cmd.join(' ')}` : ''}`);
+  say(`$ ssh ${pass.login_user}@${pass.host} -p ${pass.port}${cmd.length ? ` ${cmd.join(' ')}` : ''}${pass.host_key ? '   (host key pinned from the contract)' : ''}`);
   const r = spawnSync('ssh', args, { stdio: 'inherit' });
   return r.status ?? 255;
 }
@@ -101,7 +118,7 @@ async function machines() {
   if (list.length === 0) return console.log('no machines registered yet');
   table([
     ['MACHINE', 'PRICE/MIN', 'CONNECT', 'OWNER', 'PASSES', 'EARNED', 'STATE'],
-    ...list.map((m) => [m.id, `${fromYocto(m.price_per_minute)} NEAR`, `${m.login_user}@${m.host}:${m.port}`, m.owner, String(m.passes_issued), `${fromYocto(m.total_earned)} NEAR`, m.active ? 'open' : 'paused']),
+    ...list.map((m) => [m.id, `${fromYocto(m.price_per_minute)} NEAR`, `${m.login_user}@${m.host}:${m.port}`, m.owner, String(m.passes_issued), `${fromYocto(m.total_earned)} NEAR`, machineState(m)]),
   ]);
 }
 
@@ -129,6 +146,8 @@ async function rent() {
 
   const machine = await view<Machine | null>('get_machine', { machine_id: machineId });
   if (!machine) throw new Error(`no machine called ${machineId}; try: gatepass machines`);
+  const busyFor = machine.busy_until - Math.floor(Date.now() / 1000);
+  if (busyFor > 0) throw new Error(`${machineId} is in use by another renter for ${busyFor} more seconds; a machine has one renter at a time`);
   const quote = await view<Quote>('quote', { machine_id: machineId, minutes });
   const account = await signer();
   say(`renting ${machineId} for ${minutes} min: ${fromYocto(quote.price)} NEAR + ${fromYocto(quote.storage_fee)} NEAR storage fee = ${fromYocto(quote.total)} NEAR, paid by ${account.accountId}`);
@@ -167,15 +186,16 @@ async function rent() {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.renameSync(tmp, dir);
   fs.writeFileSync(path.join(dir, 'key-cert.pub'), `${pass.certificate}\n`);
-  fs.writeFileSync(path.join(dir, 'pass.json'), `${JSON.stringify({ ...pass, tx: txHash ?? null }, null, 2)}\n`);
+  const saved = { ...pass, host_key: machine.host_key, tx: txHash ?? null };
+  fs.writeFileSync(path.join(dir, 'pass.json'), `${JSON.stringify(saved, null, 2)}\n`);
 
   say(`pass #${pass.serial} signed in ${((Date.now() - started) / 1000).toFixed(1)}s, valid until ${iso(pass.valid_before)} (${secondsLeft(pass)}s from now)`);
   say(`  tx:   ${explorerUrl}`);
   say(`  cert: ${path.relative(process.cwd(), path.join(dir, 'key-cert.pub'))}`);
 
   let exitCode = 0;
-  if (!opt['no-ssh']) exitCode = runSsh(dir, pass, remoteCommand);
-  if (opt.json) console.log(JSON.stringify({ ...pass, tx: txHash ?? null, explorer: explorerUrl, dir, ssh_exit_code: opt['no-ssh'] ? null : exitCode }, null, 2));
+  if (!opt['no-ssh']) exitCode = runSsh(dir, saved, remoteCommand);
+  if (opt.json) console.log(JSON.stringify({ ...saved, explorer: explorerUrl, dir, ssh_exit_code: opt['no-ssh'] ? null : exitCode }, null, 2));
   process.exitCode = exitCode;
 }
 
@@ -184,7 +204,7 @@ async function ssh() {
   const serial = rest[0];
   const dir = path.join(PASS_DIR, String(serial));
   if (!serial || !fs.existsSync(path.join(dir, 'pass.json'))) throw new Error(`usage: gatepass ssh <serial> [-- command ...]  (no saved pass ${serial ?? ''} in ${PASS_DIR})`);
-  const pass: Pass = JSON.parse(fs.readFileSync(path.join(dir, 'pass.json'), 'utf8'));
+  const pass: Pass & { host_key?: string | null } = JSON.parse(fs.readFileSync(path.join(dir, 'pass.json'), 'utf8'));
   const left = secondsLeft(pass);
   say(left > 0 ? `pass #${pass.serial}: ${left}s left` : `pass #${pass.serial} expired ${-left}s ago; the host should refuse it`);
   process.exitCode = runSsh(dir, pass, remoteCommand);
@@ -272,6 +292,18 @@ async function withdraw() {
   console.log(`  tx: ${r.explorerUrl}`);
 }
 
+/** Owner: publish the machine's SSH host key so renters can pin it. */
+async function setHostKey() {
+  const [id, ...keyParts] = rest;
+  let key = keyParts.join(' ');
+  if (key && fs.existsSync(key)) key = fs.readFileSync(key, 'utf8').trim();
+  if (!id || !key) throw new Error('usage: gatepass set-host-key <machine> "<ssh-ed25519 AAAA...>"  (or a path to the .pub file)');
+  const r = await call(await signer(), contractId(), 'set_host_key', { machine_id: id, host_key: key });
+  if (opt.json) return console.log(JSON.stringify({ machine_id: id, host_key: key, tx: r.txHash }, null, 2));
+  console.log(`host key of ${id} published; renters will accept only this key`);
+  console.log(`  tx: ${r.explorerUrl}`);
+}
+
 /** Re-read a machine's CA key from the MPC contract (needed only if registration could not fetch it). */
 async function refreshCa() {
   const id = rest[0];
@@ -293,13 +325,14 @@ function help() {
   gatepass host-setup <machine> [--write F] the machine's CA key and sshd lines
   gatepass register <id> --host H --port P --user U --price <NEAR/min>
   gatepass withdraw <machine>               owner: collect earnings
+  gatepass set-host-key <machine> <key>     owner: publish the machine's SSH host key
   gatepass refresh-ca <machine>             re-read a machine's CA key from the MPC
 
 contract: ${s.contractId ?? '(set GATEPASS_CONTRACT in .env)'}   network: ${s.networkId}   account: ${s.accountId ?? '(none)'}`);
 }
 
 const commands: Record<string, () => Promise<void> | void> = {
-  machines, rent, ssh, passes, 'host-setup': hostSetup, register, withdraw, 'refresh-ca': refreshCa, help,
+  machines, rent, ssh, passes, 'host-setup': hostSetup, register, withdraw, 'set-host-key': setHostKey, 'refresh-ca': refreshCa, help,
 };
 
 try {

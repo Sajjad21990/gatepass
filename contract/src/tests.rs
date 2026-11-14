@@ -396,6 +396,8 @@ fn storage_fees_cover_the_storage_actually_used() {
     let _ = c.register_machine(id.clone(), "h".repeat(128), 2222, "u".repeat(32), near(10));
     ctx("gatepass.testnet", NearToken::from_yoctonear(0));
     c.on_ca_key(id.clone(), Ok(mpc_key(test_ca().verifying_key().to_bytes())));
+    ctx("owner-with-a-very-long-account-name-0123456789abcdef.testnet", NearToken::from_yoctonear(0));
+    c.set_host_key(id.clone(), USER_PUB.into());
     c.machines.flush();
     let machine_bytes = env::storage_usage() - before;
     assert!(cost(machine_bytes) <= MACHINE_STORAGE_FEE, "machine uses {machine_bytes} bytes");
@@ -429,4 +431,86 @@ fn host_cannot_look_like_an_ssh_option() {
     let mut c = Gatepass::new(acc("v1.signer-prod.testnet"), None, None);
     ctx("mallory.testnet", MACHINE_STORAGE_FEE);
     let _ = c.register_machine("evil".into(), "-oProxyCommand=id".into(), 22, "renter".into(), near(1));
+}
+
+// ---------- one renter at a time, and the pinned host key ----------
+
+fn ctx_at(predecessor: &str, deposit: NearToken, unix: u64) {
+    testing_env!(VMContextBuilder::new()
+        .current_account_id(acc("gatepass.testnet"))
+        .predecessor_account_id(acc(predecessor))
+        .signer_account_id(acc(predecessor))
+        .attached_deposit(deposit)
+        .prepaid_gas(Gas::from_tgas(300))
+        .block_timestamp(unix * 1_000_000_000)
+        .random_seed([7u8; 32])
+        .build());
+}
+
+#[test]
+#[should_panic(expected = "this machine is in use for another 120 seconds")]
+fn a_machine_has_one_renter_at_a_time() {
+    let mut c = setup([1; 32]);
+    ctx("alice.testnet", near(30));
+    let _ = c.buy_pass("gpu-1".into(), USER_PUB.into(), 2);
+    assert_eq!(c.get_machine("gpu-1".into()).unwrap().busy_until, NOW + 120);
+    assert_eq!(c.quote("gpu-1".into(), 1).busy_until, NOW + 120);
+
+    // Bob cannot get in while Alice's pass is live (here: still being signed).
+    ctx("bob.testnet", near(30));
+    let _ = c.buy_pass("gpu-1".into(), USER_PUB.into(), 2);
+}
+
+#[test]
+fn the_machine_is_free_again_when_the_pass_expires_or_fails() {
+    let mut c = setup(test_ca().verifying_key().to_bytes());
+    ctx("alice.testnet", near(30));
+    let _ = c.buy_pass("gpu-1".into(), USER_PUB.into(), 2);
+    let signature = mpc_signature(&c, 1);
+    ctx("gatepass.testnet", NearToken::from_yoctonear(0));
+    c.on_pass_signed(1, Ok(json!({ "scheme": "Ed25519", "signature": signature })));
+
+    // One second after Alice's time is up, Bob can rent.
+    ctx_at("bob.testnet", near(30), NOW + 121);
+    assert_eq!(c.get_machine("gpu-1".into()).unwrap().busy_until, 0);
+    let _ = c.buy_pass("gpu-1".into(), USER_PUB.into(), 2);
+    assert_eq!(c.get_pass(2).unwrap().buyer, acc("bob.testnet"));
+
+    // Bob's pass fails to sign: the machine is free at once, not in two minutes.
+    ctx_at("gatepass.testnet", NearToken::from_yoctonear(0), NOW + 125);
+    c.on_pass_signed(2, Err(PromiseError::Failed));
+    assert_eq!(c.get_machine("gpu-1".into()).unwrap().busy_until, 0);
+    ctx_at("carol.testnet", near(30), NOW + 126);
+    let _ = c.buy_pass("gpu-1".into(), USER_PUB.into(), 2);
+    assert_eq!(c.get_pass(3).unwrap().buyer, acc("carol.testnet"));
+}
+
+#[test]
+fn renting_one_machine_does_not_block_another() {
+    let mut c = setup([1; 32]);
+    add_machine(&mut c, "owner.testnet", "gpu-2", [2; 32]);
+    ctx("alice.testnet", near(30));
+    let _ = c.buy_pass("gpu-1".into(), USER_PUB.into(), 2);
+    ctx("bob.testnet", near(30));
+    let _ = c.buy_pass("gpu-2".into(), USER_PUB.into(), 2);
+    assert_eq!(c.get_pass(2).unwrap().machine_id, "gpu-2");
+}
+
+#[test]
+fn the_owner_publishes_the_host_key() {
+    let mut c = setup([1; 32]);
+    assert_eq!(c.get_machine("gpu-1".into()).unwrap().host_key, None);
+    ctx("owner.testnet", NearToken::from_yoctonear(0));
+    c.set_host_key("gpu-1".into(), USER_PUB.into());
+    let key = c.get_machine("gpu-1".into()).unwrap().host_key.unwrap();
+    assert_eq!(cert::parse_pubkey_line(&key).unwrap(), cert::parse_pubkey_line(USER_PUB).unwrap());
+    assert_eq!(c.list_machines(None, None)[0].host_key, Some(key));
+}
+
+#[test]
+#[should_panic(expected = "only the machine owner can do this")]
+fn nobody_else_can_change_the_host_key() {
+    let mut c = setup([1; 32]);
+    ctx("mallory.testnet", NearToken::from_yoctonear(0));
+    c.set_host_key("gpu-1".into(), USER_PUB.into());
 }
