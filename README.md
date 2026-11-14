@@ -52,7 +52,7 @@ any other machine.
 
 You need Docker (running), Node 22.18 or newer, and the OpenSSH client
 (`ssh`, `ssh-keygen`). You do **not** need Rust: the contract is already
-deployed on testnet at `gatepass-v2.gp-spike-47008742.testnet`.
+deployed on testnet at `gatepass.testnet`.
 
 1. Get the code and install dependencies.
 
@@ -132,6 +132,7 @@ Rented for 1 minute at 0.01 NEAR/minute, costing 0.02 NEAR.
 spent
   pass #5 on demo-xxxxxxxx: 0.02 NEAR   https://testnet.nearblocks.io/txns/...
   total 0.02 of 0.1 NEAR budget (plus network fees)
+  model: 4 calls, 8492 input + 2356 output tokens (qwen3:8b)
 ```
 
 Which model decides is up to you. Set these in `.env` (any OpenAI-compatible
@@ -143,6 +144,11 @@ chat API with tool calling works):
 | `AGENT_LLM_BASE_URL` | Default `https://cloud-api.near.ai/v1` (NEAR AI Cloud). |
 | `AGENT_LLM_MODEL` | Default `z-ai/glm-5.3-flash`. |
 
+- **OpenAI:** set `AGENT_LLM_BASE_URL=https://api.openai.com/v1`, a model such
+  as `gpt-5-mini`, and your key. Not tested here (no key was available).
+- **Model cost:** the run above took 4 model calls, about 8,500 input and
+  2,400 output tokens, and the script prints these counts at the end of every
+  run. At a hosted small model's prices that is well under one US cent per run.
 - **Tested:** with `qwen3:8b` served locally by Ollama
   (`AGENT_LLM_BASE_URL=http://127.0.0.1:11434/v1`, any non-empty key). The
   output above is from that run. Asked "What is 17 times 23?", the same agent
@@ -232,10 +238,11 @@ tokens through NEAR Intents, and NFT ownership shares.
 
 | What | Link |
 | --- | --- |
-| Contract | [gatepass-v2.gp-spike-47008742.testnet](https://testnet.nearblocks.io/address/gatepass-v2.gp-spike-47008742.testnet) |
-| Machine `gpu-1` registered; contract fetches its CA key from the MPC | [Gb5s13j1...](https://testnet.nearblocks.io/txns/Gb5s13j1StVnM2iodASgWQu2UpLL4dhJWRU2UypiaAJk) |
-| Pass #1 bought and signed by Chain Signatures | [2U9WtbZ8...](https://testnet.nearblocks.io/txns/2U9WtbZ8W5Lg8JCs8hj1ZRKKKHET1oBnbKwJhmiNRRJg) |
-| Owner withdraws earnings | [He8sJoPT...](https://testnet.nearblocks.io/txns/He8sJoPTeNq6HrUobR1Uwp8zjJUDuPMHEHdHrUY7ykam) |
+| Contract | [gatepass.testnet](https://testnet.nearblocks.io/address/gatepass.testnet) |
+| Machine `gpu-1` registered; contract fetches its CA key from the MPC | [68bXEUTo...](https://testnet.nearblocks.io/txns/68bXEUTod6tbMTisrBkz5ADpdAy65b2c7kt8K9kotSyr) |
+| Pass #1 bought by a renter account and signed by Chain Signatures | [3q1EM367...](https://testnet.nearblocks.io/txns/3q1EM367jXYyK3BMtR14BDroa6XwhwWthP9CPFTLzTm2) |
+| Owner withdraws earnings | [AYw2aFMn...](https://testnet.nearblocks.io/txns/AYw2aFMnseVoWFRHqcqszEJf4nRsuM35VuZcaHzt7Gxi) |
+| Pass #2 bought by the AI agent | [8y63yUb6...](https://testnet.nearblocks.io/txns/8y63yUb6u69PCE8EZVC7qbBBJLmjb9vzkJmnNQTm6CY6) |
 | First spike: MPC signs a hand-built certificate, called directly from an account | [Dtkpbaa8...](https://testnet.nearblocks.io/txns/Dtkpbaa811vUcG7ejyQ2XgELraxBEKpeAB4zjXeBgPmx) |
 
 Chain Signatures details that this project depends on, checked against the

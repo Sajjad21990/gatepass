@@ -143,16 +143,24 @@ Rules you set for yourself:
 const LLM_BASE = (process.env.AGENT_LLM_BASE_URL || 'https://cloud-api.near.ai/v1').replace(/\/$/, '');
 const LLM_MODEL = process.env.AGENT_LLM_MODEL || 'z-ai/glm-5.3-flash';
 
+/** Tokens the model endpoint reported, so a run's model cost can be worked out. */
+const usage = { calls: 0, input: 0, output: 0 };
+
 async function chat(messages: any[]): Promise<any> {
   const base = LLM_BASE;
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.AGENT_LLM_API_KEY}` },
-    body: JSON.stringify({ model: LLM_MODEL, messages, tools: toolSpecs, tool_choice: 'auto', temperature: 0 }),
+    // No temperature or token limits: some hosted reasoning models reject them.
+    body: JSON.stringify({ model: LLM_MODEL, messages, tools: toolSpecs, tool_choice: 'auto' }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`model endpoint answered ${res.status}: ${text.slice(0, 300)}`);
-  return JSON.parse(text).choices[0].message;
+  const body = JSON.parse(text);
+  usage.calls += 1;
+  usage.input += body.usage?.prompt_tokens ?? 0;
+  usage.output += body.usage?.completion_tokens ?? 0;
+  return body.choices[0].message;
 }
 
 async function withModel(): Promise<string> {
@@ -206,6 +214,7 @@ try {
     console.log(`  pass #${serial} on ${p.machine_id}: ${fromYocto(p.total)} NEAR${p.tx ? `   ${s.explorer}/txns/${p.tx}` : ''}`);
   }
   console.log(`  total ${fromYocto(spent)} of ${fromYocto(budget)} NEAR budget (plus network fees)`);
+  if (usage.calls) console.log(dim(`  model: ${usage.calls} calls, ${usage.input} input + ${usage.output} output tokens (${LLM_MODEL})`));
 } catch (err: any) {
   console.error(`agent: ${err?.message ?? err}`);
   process.exitCode = 1;
